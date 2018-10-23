@@ -7,7 +7,7 @@ grammar_cjkRuby: true
 [TOC]
 
 ## Android 虚拟机与编译器的变迁
-![](changes.png)
+![](./changes.png)
 {% asset_img changes.png %}
 
 ## 需要了解几个概念
@@ -23,7 +23,7 @@ grammar_cjkRuby: true
 
 ## 使用JIT编译器时，App优缺点
 
-![](jit.png)
+![](./jit.png)
 {% asset_img jit.png %}
 
 优点：
@@ -38,7 +38,7 @@ grammar_cjkRuby: true
 
 ## 使用AOT编译器的时候，App优缺点
 
-![](aot.png)
+![](./aot.png)
 {% asset_img aot.png %}
 
 优点：
@@ -54,7 +54,7 @@ grammar_cjkRuby: true
 
 ## AOT编译方案面临的挑战
 
-![](aot_challenges.png)
+![](./aot_challenges.png)
 {% asset_img aot_challenges.png %}
 
 - 由于系统更新时，所有的应用都需要重新安装，这会导致所有的应用都需要在重新编译一遍，如果你的应用贼多的话......。
@@ -65,7 +65,7 @@ grammar_cjkRuby: true
 
 ## Google大佬的解决方案，混合编译
 
-![](android_n.png)
+![](./android_n.png)
 {% asset_img android_n.png %}
 
 发现JIT又回来了。
@@ -91,13 +91,13 @@ grammar_cjkRuby: true
 
 ## 混合编译与AOT的性能比较
 
-![](performance1.png)
+![](./performance1.png)
 {% asset_img performance1.png %}
 
-![](performance2.png)
+![](./performance2.png)
 {% asset_img performance2.png %}
 
-![](performance3.PNG)
+![](./performance3.PNG)
 {% asset_img performance3.png %}
 
 有意思的是，AOT与JIT在Micro Benchmark测试中各有优劣。
