@@ -23,7 +23,7 @@ grammar_cjkRuby: true
 
 ## 使用JIT编译器时，App优缺点
 
-![](./jit.png)
+![](./JIT.png)
 {% asset_img jit.png %}
 
 优点：
@@ -38,7 +38,7 @@ grammar_cjkRuby: true
 
 ## 使用AOT编译器的时候，App优缺点
 
-![](./aot.png)
+![](./AOT.png)
 {% asset_img aot.png %}
 
 优点：
@@ -54,7 +54,7 @@ grammar_cjkRuby: true
 
 ## AOT编译方案面临的挑战
 
-![](./aot_challenges.png)
+![](./aot_challenges.PNG)
 {% asset_img aot_challenges.png %}
 
 - 由于系统更新时，所有的应用都需要重新安装，这会导致所有的应用都需要在重新编译一遍，如果你的应用贼多的话......。
