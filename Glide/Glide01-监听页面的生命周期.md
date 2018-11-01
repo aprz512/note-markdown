@@ -66,7 +66,7 @@ E/test: Activity - onDestroy:
 ## 管理监听
 Fragment是跟随Activity的生命周期的，所以生命周期的发送者肯定Fragment是当仁不让了。由于请求肯定会有多个，所以我们需要一个集合来管理。要是我们自己来编写代码的话，肯定就是在Fragment里面搞一个集合，然后就直接开始写代码了。但是既然我们是探究Glide的源码实现，来都来了，就顺便看一下大佬是怎么做的。
 
-我们顺着Glide.with()找到 RequestManagerFragment（与它对应的还有一个SupportRequestManagerFragment），这个framgnt就是Glide要添加到页面上的，我们看到它有一个叫做 ActivityFragmentLifecycle 的变量。看类图来理清他们的关系：
+我们顺着Glide.with()找到 RequestManagerFragment（与它对应的还有一个SupportRequestManagerFragment），这个fragment就是Glide要添加到页面上的，我们看到它有一个叫做 ActivityFragmentLifecycle 的变量。看类图来理清他们的关系：
 
 ![](ActivityFragmentLifecycle.png)
 
@@ -108,17 +108,42 @@ Glide里面，每一个 Fragment 都有一个对应的 RequestManager，可以�
     return requestManager;
   }
 ```
-里面有个TODO，说明作者想把那段代码拿出去。注意 factory.build()这行代码，创建requestManager对象的时候，将 RequestManagerFragment 里面 lifecycle 传递进去了。又到了讨厌的跟踪代码时间，不过幸好，这次非常简单：
-```java
-  private static final RequestManagerFactory DEFAULT_FACTORY = new RequestManagerFactory() {
-    @NonNull
-    @Override
-    public RequestManager build(@NonNull Glide glide, @NonNull Lifecycle lifecycle,
-        @NonNull RequestManagerTreeNode requestManagerTreeNode, @NonNull Context context) {
-      return new RequestManager(glide, lifecycle, requestManagerTreeNode, context);
+里面有个TODO，说明作者想把那段代码拿出去。
+有两个需要重点注意的地方：
+ - getRequestManagerFragment 这个方法里面悄悄做了 add Fragment 的操作
+  ```java
+  private RequestManagerFragment getRequestManagerFragment(
+      @NonNull final android.app.FragmentManager fm,
+      @Nullable android.app.Fragment parentHint,
+      boolean isParentVisible) {
+    RequestManagerFragment current = (RequestManagerFragment) fm.findFragmentByTag(FRAGMENT_TAG);
+    if (current == null) {
+      current = pendingRequestManagerFragments.get(fm);
+      if (current == null) {
+        current = new RequestManagerFragment();
+        current.setParentFragmentHint(parentHint);
+        if (isParentVisible) {
+          current.getGlideLifecycle().onStart();
+        }
+        pendingRequestManagerFragments.put(fm, current);
+        fm.beginTransaction().add(current, FRAGMENT_TAG).commitAllowingStateLoss();
+        handler.obtainMessage(ID_REMOVE_FRAGMENT_MANAGER, fm).sendToTarget();
+      }
     }
-  };
-```
+    return current;
+  }
+  ```
+ - factory.build()这行代码，创建requestManager对象的时候，将 RequestManagerFragment 里面 lifecycle 传递进去了。又到了讨厌的跟踪代码时间，不过幸好，这次非常简单：
+    ```java
+      private static final RequestManagerFactory DEFAULT_FACTORY = new RequestManagerFactory() {
+        @NonNull
+        @Override
+        public RequestManager build(@NonNull Glide glide, @NonNull Lifecycle lifecycle,
+            @NonNull RequestManagerTreeNode requestManagerTreeNode, @NonNull Context context) {
+          return new RequestManager(glide, lifecycle, requestManagerTreeNode, context);
+        }
+      };
+    ```
 所以创建 RequestManager 实例的时候，就将 RequestManagerFragment 里面的 lifecycle 传递进去，这样就形成了一个观察者模式。
 
 
@@ -190,9 +215,29 @@ Fragment 与 Activity 调用 startActivityForResult 的不同：
     }
 ```
 
+## 完整 Demo
+写了一个小例子，当你运行的时候会输出信息。另外还对源码进行了一点解释。
+- 启动页面：
+```console
+RequestManager - 准备加载图片: https://mm.png
+RequestManager - 恢复图片加载: 
+```
+- 跳转到另外的页面：
+```console
+RequestManager - 暂停图片加载
+```
+- 从另外的页面返回：
+```console
+RequestManager - 恢复图片加载
+```
+- 退出当前页面：
+```console
+RequestManager - 暂停图片加载: 
+RequestManager - 取消图片加载: 
+```
 
-
-
+Demo 地址：https://github.com/aprz512/easyGlide
+选择 examples 分支，运行 Glide01 项目即可。
 
 
 
