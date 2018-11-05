@@ -1,5 +1,5 @@
 ---
-title: HashMap的扩容原理
+title: HashMap的扩容原理(基于JDK1.8)
 tags: 新建,模板,小书匠
 grammar_cjkRuby: true
 ---
@@ -12,6 +12,8 @@ grammar_cjkRuby: true
         // 使用 key 的 hashCode 方法来计算
         static final int hash(Object key) {
             int h;
+            // 当key = null时，hash值 = 0，所以HashMap的key 可为null      
+            // 注：对比HashTable，HashTable对key直接hashCode（），若key为null时，会抛出异常，所以HashTable的key不可为null
             return (key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16);
         }
     ```
@@ -80,7 +82,12 @@ int hashCode() {
     ![](cap_init.png)
     
 - 扩容的小技巧
-    扩容每次都是在原来的基础上变为2倍，这个比较简单，不是我们的目标，我们这次的目的是探究一下，每一个entry里面的元素是扩容之后是如何分配的？这要从hash碰撞说起。
+
+    扩容每次都是在原来的基础上变为2倍，这个比较简单，需要注意的是一个叫做**负载因子**的东西。HashMap扩容时，并不是装满容量了之后才扩容，而是有一个阈值：`容量的大小 * 负载因子`。那么负载因子的取值会有什么影响呢？
+    ![从网上copy过来的一个图](loadfactor.jpg)
+    
+    
+    上面说了这么多，都不是我们的目标，我们这次的目的是探究一下，每一个entry里面的元素是扩容之后是如何分配的？这要从hash碰撞说起。
 
     无论Hash函数设计的多么精妙，总免不了hash碰撞，所以HashMap的结构才是数组加上链表加上红黑树，我们现在探究的就是如果一个entry是链表的时候，这个entry里面的数据是如何分配到扩容之后的HashMap中的。
     
@@ -144,6 +151,7 @@ initialCapacity = (需要储存的元素个数 / 负载因子) + 1。负载因�
 是因为如果需要put的数据非常多，而默认值是16的话，就需要进行很多次扩容操作，而扩容操作需要先申请新的内存，将原数据copy过去，再分配，比较耗时。
 
 ## 参考文档
+- https://blog.csdn.net/carson_ho/article/details/79373134
 - https://www.zhihu.com/question/20733617
 - http://www.hollischuang.com/archives/2431
 - https://blog.csdn.net/u013494765/article/details/77837338
