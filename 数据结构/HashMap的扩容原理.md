@@ -32,10 +32,7 @@ int hashCode() {
     return i << 4;
 }
 ```
-可以看出来，无论i的值是多少，计算出来的 hashCode 的值，它的低 4 位全是 0 。那么使用这个 hashCode 去计算 table 的位置会发生什么呢？
-
-再假设，HashMap 的容量是默认的 16，那么使用上面的 hashCode 计算出来的结果就全部是 0。
-
+可以看出来，无论i的值是多少，计算出来的 hashCode 的值，它的低 4 位全是 0 。那么使用这个 hashCode 去计算 table 的位置会发生什么呢？我们先认为这个HashMap 的容量是默认的 16，那么使用上面的 hashCode 计算出来的结果就全部是 0，所有的数据都会放在同一个位置，那么散列表就变成了链表。
 
 ![](find_pos.png)
 
