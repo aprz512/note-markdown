@@ -11,7 +11,7 @@
 
    在上图中，app是主工程，componenta是组件。点击comonenta或者app均可以单独运行。
 
-   componenta是组件。点击comonenta或者app均可以单独运行。
+
 
    但是与普通项目不同的是**点击app运行的时候，会将componenta当作一个library打到app里面去**，此时的componenta会被当作依赖库运行，与在app的build.gradle文件中添加 
 
@@ -21,7 +21,6 @@
 
    的作用是一样的。
 
-   组件可以单独运行，运行App又可以将其他组件打包进来。
 
 
 
@@ -131,3 +130,9 @@
 - 该插件基于gradle4.6编写，使用时注意gradle版本不得小于4.6
 - 注意组件的前缀设置，建议所有的module都加上前缀，不管是否组件（注意前缀不是严格要求完全一致，比如前缀声明为`ca_`，使用可以可以用 `c_a_`或者`CA`，灵活使用，避免风格看着奇怪）
 - 注意去掉组件的applicationId，默认会使用包名，否则编译主工程时会报异常。
+
+
+
+### 实例项目
+
+https://github.com/aprz512/AutoComponent
