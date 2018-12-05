@@ -7,7 +7,7 @@
 ### 优点
 1. 避免组件在Application与Library之间切换导致的重复编译。
 
-   ![](F:/note-markdown/%E7%BB%84%E4%BB%B6%E5%8C%96%E6%A1%86%E6%9E%B6%E6%8F%92%E4%BB%B6/1.PNG)
+   ![](1.PNG)
 
    在上图中，app是主工程，componenta是组件。点击comonenta或者app均可以单独运行。
 
@@ -27,7 +27,7 @@
 
 2. **统一debug文件的位置**，一目了然，如下：
 
-   <img src="F:/note-markdown/%E7%BB%84%E4%BB%B6%E5%8C%96%E6%A1%86%E6%9E%B6%E6%8F%92%E4%BB%B6/2.PNG" style="zoom:50%" />
+   <img src="2.PNG" style="zoom:50%" />
 
    以后就不用在src下又维护一个debug目录。
 
