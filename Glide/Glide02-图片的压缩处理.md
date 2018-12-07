@@ -12,7 +12,7 @@
 
 ### 实例
 
-然是用上面的例子吧，首先我们要计算出inSampleSize的值，因为使用inSampleSize运算会比较快。比如：`1200x900`的图是可以直接压缩到 `400x300`，但是先使用 inSampleSize，压缩一半到 `600x450`，再压缩到`400x300`会比直接压缩速度更快。为什么会更快，我猜想是因为，2的幂次方比较好采样，如果 inSampleSize = 2，那么采样的时候，隔一个像素采一个就好了。
+然是用上面的例子吧，首先我们要计算出inSampleSize的值，因为使用inSampleSize运算会比较快。比如：`1200x900`的图是可以直接压缩到 `400x300`，但是先使用 inSampleSize，压缩一半到 `600x450`，再压缩到`400x300`会比直接压缩速度更快。为什么会更快，请看最后的分析。
 
 附上一份常见的计算 inSampleSize 值的代码：
 
@@ -848,7 +848,89 @@ DecodeJob一看就是用来解码图片的类，DecodeHelper是一个辅助类�
 
 
 
+### 为什么这3个参数要结合使用，而不是直接使用 inDensity 与 inTargetDensity
+
+下面的代码基于 Android 9.0 分析而来，刚接触 JNI，很多东西不明白，强行分析可能有误，看看就好。
+
+**static jobject doDecode(JNIEnv* env, std::unique_ptr<SkStreamRewindable> stream, jobject padding, jobject options)**
+
+```c++
+        if (env->GetBooleanField(options, gOptions_scaledFieldID)) {
+            const int density = env->GetIntField(options, gOptions_densityFieldID);
+            const int targetDensity = env->GetIntField(options, gOptions_targetDensityFieldID);
+            const int screenDensity = env->GetIntField(options, gOptions_screenDensityFieldID);
+            if (density != 0 && targetDensity != 0 && density != screenDensity) {
+                scale = (float) targetDensity / density;
+            }
+        }
+```
+
+doDecode 方法中只有这一段用到了 inDensity 与 inTargetDensity。用它们计算出了一个结果 scale。直接搜索哪里用到了这个值。
+
+```c++
+    if (scale != 1.0f) {
+        willScale = true;
+        scaledWidth = static_cast<int>(scaledWidth * scale + 0.5f);
+        scaledHeight = static_cast<int>(scaledHeight * scale + 0.5f);
+    }
+```
+
+对 scaledWidth 与 scaledHeight 进行缩放。
+
+看看哪里用到了这个两个值。
+
+```c++
+    const float scaleX = scaledWidth / float(decodingBitmap.width());
+    const float scaleY = scaledHeight / float(decodingBitmap.height());
+```
+
+看看哪里用到了 scaleX 与 scaleY。
+
+```c++
+        SkCanvas canvas(outputBitmap, SkCanvas::ColorBehavior::kLegacy);
+        canvas.scale(scaleX, scaleY);
+        canvas.drawBitmap(decodingBitmap, 0.0f, 0.0f, &paint);
+```
+
+这里有点意思，将 decodingBitmap 缩放了 scaleX，scaleY，然后画到 outputBitmap 上了。
+
+看看 decodingBitmap 是怎么创建的。
+
+```c++
+    SkBitmap decodingBitmap;
+    if (!decodingBitmap.setInfo(bitmapInfo) ||
+            !decodingBitmap.tryAllocPixels(decodeAllocator)) {
+        // SkAndroidCodec should recommend a valid SkImageInfo, so setInfo()
+        // should only only fail if the calculated value for rowBytes is too
+        // large.
+        // tryAllocPixels() can fail due to OOM on the Java heap, OOM on the
+        // native heap, or the recycled javaBitmap being too small to reuse.
+        return nullptr;
+    }
+```
+
+这里只有一个声明，真是奇怪，不太明白。
+
+```c++
+    codecOptions.fSampleSize = sampleSize;
+    SkCodec::Result result = codec->getAndroidPixels(decodeInfo, decodingBitmap.getPixels(),
+            decodingBitmap.rowBytes(), &codecOptions);
+```
+
+嗯，我没搜索到哪里创建的这个对象，但是发现了这个一个东西，应该是用 codecOptions 取获取图片的像素。注意这里只使用了 sampleSize。
+
+给我的感觉是 Skia 使用 inSampleSize 的值去获取像素，然后将这个 Bitmap 的画布缩放 inTargetDensity / inDensity 倍，就得到了需要的大小。
+
+嗯，《Android高性能编程》说 inSampleSize 比较快，所以需要两者结合，好像是那么回事。
+
+
+
 ### 参考文档
 
 https://blog.csdn.net/ynztlxdeai/article/details/69956262
 
+https://cloud.tencent.com/developer/article/1006307
+
+https://cloud.tencent.com/developer/article/1006352
+
+https://android.googlesource.com/platform/frameworks/base/+/android-9.0.0_r21/core/jni/android/graphics/BitmapFactory.cpp
