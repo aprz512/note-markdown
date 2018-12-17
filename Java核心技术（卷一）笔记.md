@@ -2,7 +2,7 @@
 
 
 
-### 第一章
+### 第一章 Java程序设计概述
 
 **面向对象设计**：
 
@@ -16,7 +16,9 @@
 
 即时编译器还可以消除函数调用（即“内联”）。
 
-### 第三章
+
+
+### 第三章 Java的基本程序设计结构
 
 **一个简单的Java应用程序**：
 
@@ -135,4 +137,199 @@ System.out.print("%1$s %2$tB %2$te %2$tY", "Due date:", new Date());
 ```java
 System.out.print("%s %tB %<te %<tY", "Due date:", new Date());
 ```
+
+**数组**：
+
+Java中，允许数组长度为0，数组长度为0和null不同。
+
+**数组排序**：
+
+```java
+Arrays.sort(a); // 这个方法使用了优化的快速排序算法
+```
+
+利用数组写一个抽彩游戏（这个算法还是很有想法的）：
+
+```java
+int[] numbers = new int[n];
+
+for(int i=0; i<n; i++) {
+    numbers[i] = i + 1;
+}
+
+int[] result = new int[k];
+for (int i=0; i<k; i++) {
+    int r = (int)(Math.random() * n);
+    result[i] = numbers[r];
+    // 最关键的代码，将上面随机出来的数用最后一个数覆盖
+    numbers[r] = numbers[n - 1];
+    // 将 n 减一，相当于去掉最后一个数
+    n--;
+}
+```
+
+
+
+### 第四章 类与对象
+
+**面向对象程序设计概述**：
+
+OOP将数据放在第一位，然后再考虑操作数据的算法。
+
+**对象**：
+
+对象状态的改变必须通过调用方法实现，如果不经过方法调用就可以改变对象状态，只能说明封装性遭到了破坏。
+
+**类之间的关系：**
+
+最常见的关系有：
+
+- 依赖（“use-a”）
+- 聚合（“has-a”）
+- 继承（“is-a”）
+
+**Java类库中的LocalDate类**：
+
+将时间与日历分开是一种很好的面向对象设计。通常，最好使用不同的类表示不同的概念。
+
+**用户自定义类**：
+
+在一个源文件中，只能有一个公有类，但可以有任意数目的非共有类。
+
+第一眼看到这句话我是懵逼的，后来仔细看了代码，发现应该说的是非内部类。
+
+```java
+// Main.java
+public class Main{
+    public class Inner{}
+}
+
+class Main2 {
+    
+}
+```
+
+上面的源文件是Ok的。但是把Main2改成public的就不行。
+
+**封装的优点**：
+
+可以改变内部实现，除了该类的方法之外，不会影响其他代码。
+
+更改器方法可以执行错误检查，然而直接对域进行赋值将不会进行这些处理。
+
+**静态常量**：
+
+我们常使用的System类
+
+```java
+public class System {
+    ...
+    public static final PrintStream out = ...;
+}
+```
+
+我们知道 final 修饰的变量是不允许将别的值赋给它的，但是System类有这样的一个方法：
+
+```java
+public static void setOut(PrintStream out) {...}
+```
+
+它可以将System.out设置为不同的流，原因是setOut是一个本地方法，它可以绕过Java语言的存取控制机制。
+
+**方法参数**：
+
+Java程序设计语言总是采用按值调用。有些程序员认为Java程序设计语言对对象采用的是引用调用，实际上，这种理解是不对的，下面给出例子：
+
+```java
+public static void swap(Car a, Car b) {
+    Car temp = a;
+    a = b;
+    b = temp;
+}
+```
+
+如果Java对对象采用的是按照引用传递，那么这个方法应该够实现交换数据的效果，但是，并没有。参数被初始化为对象引用的拷贝。
+
+初始化块
+
+调用构造器的具体处理步骤：
+
+1. 所有数据域被初始化为默认值（0，false或null）。
+2. **按照在类声明中出现的顺序**，依次执行所有域初始化语句和初始化块。
+3. 如果构造器第一行调用了第二个构造器，则执行第二个构造器主体。
+4. 执行这个构造器的主题。
+
+```java
+public class Main {
+    {
+        a = 2;
+    }
+    private int a = 3;
+    
+    public int getA() {
+        return a;
+    }
+}
+
+// Main m = new Main(); 问，m.getA() 的值？
+```
+
+**对象析构与 finalize 方法**：
+
+在实际应用中，不要依赖使用 finalize 方法回收任何短缺的资源，这是因为很难知道这个方法什么时候才能够调用。
+
+我一直觉得，final，finally，finalize有啥区别，这个问题很傻×，因为他们毛关系没有，区别从何谈起。问问 final  与 volitile的区别吧！！！
+
+**将类放入包中**：
+
+假定有一个源文件开头有下列语句：
+
+```java
+package com.aprz;
+```
+
+编译器在编译源文件的时候不检查目录结构，即使这个源文件没有在子目录 com/aprz 下，也可以进行编译。但是，最终的程序将无法运行。如果包与目录不匹配，虚拟机就找不到类。
+
+**包作用域**：
+
+如果，把一个类文件放置在类路径的某处的 java/awt 子目录下，那么我们就可以访问 java.awt 包的内部了。非常危险！
+
+从 1.2 版开始，JDK 的实现者修改了类加载器，明确禁止加载用户自定义的、包名以“java”开始的类！
+
+**类路径**：
+
+javac编译器总是在当前的目录中查找文件，但Java虚拟机仅在类路径中有“.”目录的时候才查看当前目录。如果没有设置类路径，那也并不会产生什么问题，默认的类路径包含“.”目录。然而如果设置了类路径却忘记了包含“.”目录，则程序仍然可以通过编译，但不能运行。
+
+下面看一个类路径示例：
+
+```
+/home/user/classdir:.:/home/user/archives/archive.jar
+```
+
+假定虚拟机要搜寻 `com.horstmann.corejava.Employee`类文件。它首先要查看储存在jre/lib和jre/lib/ext目录下的归档文件中所存放的系统类文件。显然，在那里找不到相应的类文件，然后再查看类路径。然后查找一下文件：
+
+```
+/home/user/classdir/com/horstmann/corejava/Employee.class
+com/horstmann/corejava/Employee.class从当前目录开始
+com/horstmann/corejava/Employee.class inside /home/user/archives/archive.jar
+```
+
+编译器定位文件要比虚拟机复杂得多。如果引用了一个类，而没有指出这个类所在的包，那么编译器将首先查找包含这个类的包，并询查所有的import指令，确定其中是否包含了被引用的类。例如，假定源文件包含指令:
+
+```java
+import java.util.*;
+import com.horstmann.corejava.*;
+```
+
+并且源代码引用了Employe类。**编译器将试图查找jva.lang.Employee (因为java lang包被默认入）、java.util.Employee、com.hostmann.corejava.Employee和当前包中的Employee。**对这个类路径的所有位置中所列出的每个类进行逐查看。 如果找到了一个以上的类，就会产生编译错误(因为类必须是唯一的， 而import语句的次序却无关紧要)。
+
+编译器的任务不止这些，它还要查看源文件( Source files) 是否比类文件新。**如果是这样的话，那么源文件就会自动地重新编译**。
+
+在前面已经知道，仅可以导入其他包中的公有类。一个源文件只能包含一个公有类，并且文件名必须与公有类匹配。因此，**编译器很容易定位公有类所在的源文件**。当然，也可以从当前包中**导入非公有类**。这些类有可能定义在与类名不同的源文件中。如果从当前包中导入一个类，**编译器就要搜索当前包中的所有源文件，以便确定哪个源文件定义了这个类**。
+
+这一段很长，我只能说QQ的图片文字识别真的牛逼。
+
+
+
+### 第五章 继承
 
