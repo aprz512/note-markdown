@@ -850,6 +850,8 @@ new Object(){}.getClass().getEnclosingClass();
 
 ### 第七章 异常、断言和日志
 
+#### 异常分类
+
 ![](exception.png)
 
 
@@ -860,11 +862,786 @@ Error类层次结构描述了Java运行时系统的内部错误和资源耗尽�
 
 Exception分为两个分支：
 
-一个分支派生于RuntimeException，另一个包含其他异常。
+> 一个分支派生于RuntimeException，另一个包含其他异常。
+>
 
-划分规则是：由程序错误导致的异常属于RuntimeException；而程序本身没有问题，但由于像IO错误这类问题的异常属于其他异常。
+**划分规则是**：由程序错误导致的异常属于RuntimeException；而程序本身没有问题，但由于像IO错误这类问题的异常属于其他异常。
+
+#### 声明受查异常
 
 如果在子类中覆盖了超类的一个方法，子类方法中声明的受查异常不能比超类方法中声明的异常更通用。
 
 如果超类方法没有抛出任何受查异常，子类也不能抛出任何异常。
+
+#### 捕获异常
+
+通常，应该捕获那些知道如何处理的异常，而将那些不知道怎样处理的异常继续传递。
+
+#### 捕获多个异常
+
+在Java SE 7中，同一个catch子句中可以捕获多个异常类型。
+
+> 只有当捕获的异常类型彼此之间不存在子类关系时才需要这个特性。
+>
+> 捕获多个异常类型时，异常变量隐含为final。
+
+#### 再次抛出异常与异常链
+
+在catch子句中可以抛出一个异常，这样做的目的是改变异常的类型。
+
+```java
+try {
+    ...
+} catch (AException a) {
+    throw new BException("msg");
+}
+```
+
+不过，有一种更好的处理方法，并且将原始异常设置为新异常的“原因”：
+
+```java
+try {
+    ...
+} catch (AException a) {
+    Throwable t = new BException("msg"); 
+    t.initCause(a);
+    throw t;
+}
+```
+
+这样我们调用 e.getCause() 就可以拿到原始异常。强烈推荐使用这种包装技术。这样可以让用户抛出子系统中的高级异常，而不会丢失原始异常的细节。
+
+在Java SE 7之前，无法抛出声明异常之外的类型（虽然现在也是，但是编译器的行为不一样了）：
+
+```java
+public void update() throws SQLException {
+    try {
+        ...
+    } catch(Exception e) {
+        throw e;
+    }
+}
+```
+
+在Java SE 7之前，会有一个问题，编译器会指出这个方法可以抛出任何异常，而不仅仅是SQLException。
+
+> 现在编译器会跟踪到 e 来自 try 块。假设这个try中仅有的已检查异常是 SQLException的实例，另外，e没有被改变，那么这个方法就是合法的。
+
+#### finally子句
+
+强烈建议解耦 try/catch 和 try/finally 语句块。这样可以提高代码的清晰度。
+
+```java
+InputStream in = ...;
+try {
+    try {
+        ...
+    } finally {
+        ...
+    }
+} catch (Exception e) {
+    ...
+}
+```
+
+这种设计方式不仅清楚，而且还有一个功能，可以捕获 finally 里面的异常。
+
+当 finally 子句包含return语句时：
+
+```java
+try {
+    int r = n * n;
+    return r;
+} finally {
+    if (n == 2) {
+        return 0;
+    }
+}
+```
+
+在方法返回之前，finally 子句的内容将会执行。如果finally子句中也有一个return语句，这返回值将会覆盖原始的返回值。
+
+finally 子句的异常可能会覆盖try中的异常：
+
+```java
+InputStream in = ...;
+try {
+    ...
+} finally {
+    in.close();
+}
+```
+
+假设try块中抛出了非IOException，而close方法也出了异常，那么最后抛出的是 close 方法的 IOException。一般我们对 try 块中的异常更感兴趣，但是这时异常已经被丢失了，除非给  close 也加上 try 语句，这样就会非常繁琐。
+
+#### 带资源的 try 语句
+
+如果资源属于一个实现了 AutoCloseable 接口的类，Java SE 7 为这种代码模式提供了一个很有用的快捷方式。
+
+```java
+try (Resource res = ...) {
+    ...
+}
+```
+
+try 块退出时，或者存在一个异常，都会自动调用 `res.close();`，资源会被关闭。
+
+这种 try 语句自身也可以带 catch 和 finally 语句，但是一般不用。
+
+
+
+### 第八章 泛型程序设计
+
+#### 定义简单泛型类
+
+泛型类可以看作普通类的工厂。
+
+#### 类型变量的限定
+
+一个类型变量或通配符可以有多个限定：
+
+```java
+T extends Comparable & Serializable
+```
+
+限定类型用 & 分隔，而逗号用来分隔类型变量。如果用一个类来做限定，它必须是限定列表中的第一个。
+
+#### 类型擦除
+
+虚拟机没有泛型对象，它会擦除类型变量，并替换为限定类型（无限定类型的变量用Object）。
+
+如果有多个限定，会怎么样呢？
+
+```java
+class Interval<T extends Serializable & Compareable>
+```
+
+原始类型用 Serialzable 替换 T，编译器会在必要的时候将其强制转换为 Comparable。为了提高效率，应该将标签接口（没有方法的接口）放在边界列表的末尾。
+
+<u>当程序调用泛型方法时，如果擦除返回类型，编译器插入强制类型转换。</u>
+
+#### 翻译泛型方法
+
+假设我们有这样的一个类：
+
+```java
+class Pair<T> {
+    private T first;
+    private T second;
+    
+    ...
+        
+	public void setSecond(T second) {
+        this.second = second;
+    }
+    
+}
+-----------------------------------
+// 擦除之后，这里 T 擦除之后是 Object
+class Pair {
+    private Object first;
+    private Object second;
+    
+    ...
+        
+	public void setSecond(Object second) {
+        this.second = second;
+    }
+    
+}
+```
+
+使用一个类继承它：
+
+```java
+class Date extend Pair {
+    
+}
+-----------------------------------------------
+class Date extend Pair<LocalDate> {
+    // 这里不是重写，只是展示有一个从父类继承过来的方法
+	public void setSecond(LocalDate second) {
+        ...
+    }
+}
+```
+
+于是问题就来了，假设我使用父类引用子类的变量，然后调用 setSecond 方法，那么它本来应该走到子类的方法里面去，但是由于泛型的擦除，导致子类方法签名不一致了（父类是 Object，子类是 LocalDate）。
+
+```java
+Date date = new Date();
+Pare<LocalDate> pair = date;
+// 猜猜它会调用那个方法
+pair.setSecond(aDate);
+```
+
+现在多态与泛型擦除出现了冲突，解决方法是需要编译器在 Date类中生成一个桥方法。
+
+```java
+public void setSecond(Object second) {
+    setSecond((Date)second);
+}
+```
+
+然而，桥方法也会引出别的问题！
+
+假设 Date 类覆盖了 getSecond 方法：
+
+```java
+class Date extend Pair {
+    // 这里是重写
+    @Override
+    public LocalDate getSecond() {
+        ...
+    }
+}
+```
+
+那么，Date 类里面就有两个同名方法了，参数一样，只有返回值不一样。编译器是不允许这样的，但是，在Java虚拟机中，用参数类型和返回类型确定一个方法。因此，编译器可能产生两个仅返回类型不同的方法字节码，虚拟机可以正确处理这样的情况。
+
+如果你记忆力比较好的话，前面也提到过在覆盖父类的方法时，可以返回更加严格的类型，这也是利用的桥方法。
+
+Java泛型转换的事实：
+
+- 虚拟机中没有泛型，只有普通的类和方法
+- 所有的类型参数都用它们的限定类型替换
+- 桥方法被合成类保持多态
+- 为保持类型安全性，必要时插入强制类型转换
+
+#### 不能用基本类型实例化类型参数
+
+其原因是类型擦除，擦除之后，没有限定类型的使用 Object 代替，而 Object 不能引用基本类型。
+
+#### 运行时类型查询只适用于原始类型
+
+```java
+if (a instanceof Pair<String>)
+```
+
+这里只是测试了 a 是否时一个 Pair 对象，与 String 毫无关系。
+
+同样的道理，getClass 也总是返回原始类型。
+
+#### Varargs 警告
+
+Java 不允许创建泛型数组，其原因可以自己研究研究（泛型擦除）。假设我们有这样方法：
+
+```java
+public static <T> void addAll(Collection coll, T... ts) {}
+```
+
+ts 实际上时一个数组，考虑一下调用：
+
+```java
+Collection<Pair<String>> table = ...;
+Pair<String> p1 = ...;
+Pair<String> p2 = ...;
+addAll(table, p1, p2);
+```
+
+所以，Java虚拟机必须建立一个Pair\<String> 数组，这就违反了不循序创建泛型数组的规定。不过对于这种情况，只是会显示一个警告。
+
+#### 不能构造泛型数组
+
+最好让用户提供一个数组构造器的表达式。
+
+#### 泛型类的静态上下文中类型变量无效
+
+不能在静态域中引用类型变量。
+
+```java
+public class Singleton<T> {
+    private static T singleInstance; // ERROR
+}
+```
+
+因为如果能使用的话，不同的实例会有不同的类型。
+
+#### 不能抛出或捕获泛型类的实例
+
+泛型类扩展 Throwable 都是不合法的。
+
+```java
+class P<T> extends Exception {} // ERROR
+```
+
+在异常规范中使用类型变量是合法的。
+
+```java
+public static <T extends Throwable> void fun(T t) throws T {} // OK 
+```
+
+#### 可以消除对受查异常的检查
+
+```java
+@SuppressWarnings("unchecked")
+public static <T extends Throwable> void throwAs(Throwable t) throws T {
+    throw (T)t;
+}
+```
+
+**编译器会认为t是一个非受查异常。**
+
+再利用下面的代码就会把所有异常转换为编译器所认为的非受查异常：
+
+```java
+try {
+    do work
+} catch (Throwable t) {
+    throwAs(t);
+}
+```
+
+这样，在某些不允许抛出任何受查异常的方法中，就可以使用这个方法来抛出受查异常。
+
+#### 注意擦除后的冲突
+
+```java
+public class Pair<T> {
+    public boolean equals(T t);
+}
+```
+
+擦除之后，就是 `public boolean equals(Object t);` 与 Object 的方法重复了，会引发错误。
+
+#### 通配符概念
+
+```java
+void set(? extends Person) {...}
+```
+
+这个 set 方法不能传递任何参数，因为编译器只知道需要某个 Person 的子类，但是不知道具体是什么类型。
+
+```:arrow_double_down:
+void set(? super Person) {...}
+```
+
+该方法只能传递Person或者Person的子对象。
+
+直观的讲，带有超类型限定的通配符可以向泛型写入，带有子类型限定的通配符可以从泛型对象读取。
+
+举一个 super 限定符的应用：
+
+> LocalDate 实现了 ChronoLocalDate，而 ChronoLocalDate 扩展了 Comparable\<ChronoLocalDate>。
+
+> 因此，LocalDate 实现的是 Comparable\<ChronoLocalDate>，而不是 Comparable\<LocalDate>。
+
+在这种情况下，可以使用超类限定符来救助（要注意泛型的 extends 与类的 extends 的不同意义）：
+
+```:arrow_double_down:
+public static <T extends Comparable<? super T>> T min(T[] a) {...}
+```
+
+上个图来意思意思：
+
+![](super.png)
+
+#### 无限定通配符
+
+```:arrow_double_down:
+? getFirst()
+
+void setFirst(?)
+```
+
+getFirst 的返回值只能赋值给 Object。setFirst不能被调用，Object 也不行。
+
+#### 通配符捕获
+
+```:arrow_double_down:
+public static void swap(Pair<?> p)
+
+public staic <T> void swapHelper(Pair<T> p)
+```
+
+比较有趣的是，可以在 swap 里面调用 swapHelper。这种情况下，参数 T 捕获通配符。
+
+<u>通配符捕获只有在有许多限制的情况下才是合法的，编译器必须能够确信通配符表达的是单个、确定的类型。</u>
+
+### 第九章 集合
+
+#### 迭代器
+
+对 next 方法和 remove 方法的调用具有互相依赖性。
+
+#### 集合框架中的接口
+
+List接口定义了多个用于随机访问的方法：
+
+```java
+void add(int index, E element);
+void remove(int index);
+E get(int index);
+E set(int index, E element);
+```
+
+坦率的讲，集合框架的这个方面设计的很不好。
+
+> 集合框架中有两种类型的集合，其性能开销有很大差异。由数组支持的有序集合可以快速地随机访问，因此适合使用List方法并提供一个整数索引来访问。而链表尽管也是有序的，但是随机访问会很慢，所以最好使用迭代器来遍历。所以如果原先就提供了两个接口就会容易理解些了。
+
+为了避免对链表完成随机访问操作，Java SE 1.4 引入了一个<u>标记</u>接口 RandomAccess。用来测试一个特定的集合是否支持高效的随机访问：
+
+```java
+if (c instanceof RandomAccess) {
+    // 支持
+} else {
+    // 不支持
+}
+```
+
+Set接口等同于Collection接口，不过其方法的行为有更严谨的定义。
+
+- add 方法不允许增加重复的元素
+- equals 方法：只要两个集合包含相同的元素就认为是相等的，而不要求这些元素有相同的顺序
+- hashCode 方法：要保证含相同元素的两个集会得到相同的散列码
+
+既然两个接口的方法签名是一样的，为什么还要建立一个单独的接口呢？
+
+> 从概念上讲，并不是所有集合都是集。建立一个Set接口可以让程序员编写只接收集的方法。
+
+#### 链表
+
+在 Java 程序设计语言中，所有链表实际上都是双向链接的。
+
+ListIterator 是 Iterator 的一个子接口，它新增了一些方法。LinkedList 的 listIterator 方法会返回一个 ListIterator 的实例。注意，在使用 ListIterator 的 remove 方法时需要谨慎。
+
+在调用 next 之后，remove 方法会删除迭代器左侧的元素，但是，如果调用 previous 会删除迭代器右侧的元素。
+
+ConcurrentModificationException 异常的检测有一个特例：
+
+链表只负责跟踪对列表的结构性修改，例如，添加元素，删除元素。set方法<u>不被视为</u>结构性修改。**可以将多个迭代器附加给一个链表，所有的迭代器都调用set方法对现有的结点的内容进行修改。**
+
+**不要使用**下面的方法来遍历链表：
+
+```java
+for (int i=0; i<list.size(); i++) {
+    Element e = get(i);
+}
+```
+
+虽然 get 方法做了微小的优化（如果 i 大于 size()/2，会从后面开始遍历），但是这样写每次循环都要遍历一次。
+
+#### 散列表
+
+在 Java中，散列表用链表数组实现。
+
+#### 树集
+
+Java SE 8 中使用的是红黑树。
+
+将一个元素添加到树中要比添加到散列表中慢，不过与检查数组或链表中重复元素相比还是快很多。
+
+#### 优先级队列
+
+优先级队列并没有对所有的元素进行排序。它使用了一个优雅且高效的数据结构——堆。
+
+#### 映射 （Map） 
+
+总感觉翻译有点奇怪！！！
+
+#### 更新映射项
+
+看一个例子，统计单词出现的频率：
+
+```java
+counts.put(word, counts.get(word) + 1);
+```
+
+这会有一个问题，就是 get 可能会返回 null。于是可以这样写，给一个默认值：
+
+```java
+counts.put(word, counts.getOrDefault(word, 0) + 1);
+```
+
+另一种方法就是先调用 putIfAbsent：
+
+```java
+counts.putIfAbsent(word, 0);
+counts.put(word, counts.get(word) + 1);
+```
+
+不过，还可以有更简单的方式，使用 merge 方法，可以简化这个常见的操作：
+
+```java
+counts.merge(word, 1, Integer::sum);
+```
+
+如果键值不存在，则将 word 置为 1，否则使用 Integer::sum 函数组合原值和 1。
+
+#### 映射视图
+
+集合框架不认为Map本身是一个集合。
+
+Map提供了方法用来获取映射视图，映射视图是实现了Collection接口或某个子接口的对象。
+
+```java
+Set<K> keySet();
+Collection<V> values();
+Set<Map.Entry<K,V>> entrySet();
+```
+
+这3个方法会分别返回3个视图。要注意这些视图并不是 TreeSet 或者 HashSet 的实例，而是实现了 Set 接口的另外某个类的实例。
+
+#### 视图与包装器
+
+再来说说 keySet 方法。初看起来，好像这个方法创建了一个新集，并将映射中的所有键都填进去，然后返回这个集。但是，情况并非如此。取而代之的是：keySet 方法返回一个实现 Set 接口的类对象，这个类的方法对原映射进行操作。这种集合称为视图。
+
+#### 轻量级集合包装器
+
+```java
+List<Card> cardList = Arrays.asList(cardDeck);
+```
+
+asList 返回的并不是一个 ArrayList。它是一个视图对象，带有访问底层数组的 get 和 set 方法。改变数组大小的所有方法都会抛出一个 UnsupportedOperationException 异常。
+
+#### 子范围
+
+```java
+List group2 = staff.subList(10, 20);
+group2.clear();
+```
+
+元素自动的从 staff 列表中清除，并且 group2 为空。
+
+#### 不可修改的视图
+
+简而言之，就是对所有更改器方法直接抛出一个异常。
+
+<u>由于视图只是包装了接口而不是实际的集合对象，所以只能访问接口中定义的方法。</u>
+
+注意，视图并没有重新定义 Object 的 equals 和 hashCode 方法（内容是否相等的检测在分层结构的这一层上没有定义妥当）。
+
+#### 受查视图
+
+“受查”视图用来对泛型类型发生问题时提供调试支持。
+
+```java
+ArrayList<String> strings = new ArrayList<>();
+ArrayList rawList = strings;
+rawList.add(new Date());
+```
+
+这个错误在 add 的时候检测不到。相反，只有在调用 get 方法的时候才会抛出异常。受查视图可以探测这类问题。
+
+```java
+List<String> safeStrings = Collections.checkList(strings, String.class);
+ArrayList rawList = safeStrings;
+rawList.add(new Date()); // Error
+```
+
+虚拟机在运行到 add 方法时，就会抛出异常。
+
+#### 排序与混排
+
+可以使用归并排序对链表进行高效的排序。但是Java中不是这样做的。它直接将所有元素转入一个数组，对数组进行排序，然后，再将排序后的序列复制会链表。
+
+集合类库中使用的排序算法比快速排序要慢一些，快速排序时通用排序算法的传统选择。但是，归并排序有一个主要的优点：稳定，即不需要交换相同的元素。
+
+#### 二分查找
+
+只有采用随机访问，二分查找才有意义。
+
+### 第十四章 并发
+
+#### 中断线程
+
+没有可以强制线程终止的方法。然而，interrupt 方法可以用来请求线程终止。
+
+但是，如果线程被阻塞，就无法检测中断状态。
+
+当在一个被阻塞的线程（sleep或者wait）上调用 interrupt 方法时，阻塞调用将会被 Interrupted Exception 异常中断。
+
+如果在每次工作迭代之后都调用 sleep 方法（或者其他可中断方法），isInterrupted 检测既没有必要也没有用处。如果在中断状态被置位时调用 sleep 方法，它不会休眠。相反，它将清除这一状态并抛出InterruptedException。
+
+不要将 InterruptedException 捕获在低层次上！
+
+> 要么捕获然后再次设置中断状态，要么直接抛出。
+
+#### 可运行线程
+
+在任何给定时刻，一个可运行的线程可能在运行也可能没有运行（这就是为什么将这个状态称为可运行而不是运行）。
+
+#### 被阻塞线程和等待线程
+
+被阻塞状态与等待状态是有很大不同的。其实这句话我还不太能够理解，是本质上不同，还是Java行为上不同？
+
+#### 线程优先级
+
+每一个线程有一个优先级。默认情况下，一个线程继承它的父线程的优先级。
+
+#### 守护线程
+
+守护线程应该永远不去访问固有资源，如文件，数据库，<u>因为它会在任何时候甚至在一个操作的中间发生中断。</u>
+
+setDaemon 必须在线程启动之前调用。
+
+#### 未捕获异常处理器
+
+线程的 run 方法不会抛出任何受查异常，非受查异常会导致线程终止。在线程死亡之前，异常被传递到一个用于未捕获异常的处理器。
+
+> setUncaughtExceptionHandler 方法会未任何线程安装一个默认的处理器。
+>
+> 也可以用Thread类的静态方法 setDefaultUncaughtExceptionHandler 为所有的线程安装一个默认的处理器。
+
+如果不安装默认的处理器，默认的处理器为空。但是，如果不为独立的线程安装处理器，此时的处理器就是该线程的 ThreadGroup 对象。
+
+ThreadGroup 类实现 Thread.UncaughtExceptionHanlder 接口。它的 uncaughtException 方法做如下操作：
+
+1. 如果该线程组有父线程组，那么父线程组的 uncaughtException 方法被调用。
+2. 否则，如果 Thread.getDefaultExceptionHandler 方法返回一个非空的处理器，则调用该处理器。
+3. 否则，如果 Throwable 是 ThreadDeath 的一个实例，什么都不做。
+4. 否则，线程的名字以及 Throwable 的栈轨迹被输出到 System.err 上。
+
+#### 锁对象 （ReentrantLock）
+
+如果使用锁，就不能使用带资源的 try 语句。
+
+> 一是无法释放锁，二是会新创建一个变量。
+
+ 锁是可重入的，因为线程可以重复地获得已经持有的锁。锁保持一个持有计数来跟踪对lock方法的嵌套调用。
+
+#### 条件对象
+
+使用一个条件对象来管理那些已经获得了一个锁但是却不能做有用工作的线程。
+
+一个锁对象可以有一个或多个相关的条件对象。你可以用 newCondition 方法获得一个条件对象。
+
+signalAll 方法不会立即激活一个等待线程。它仅仅解除等待线程的阻塞，以便这些线程可以在当前线程退出同步方法之后，通过竞争实现对对象的访问。
+
+每一个对象有一个内部锁，并且该锁有一个内部条件。初学者常常对条件感到困惑，推荐先学习ReentrantLock 的 Condition。
+
+wait、nofity、notifyAll 方法都需要当前线程持有锁，否则会抛出异常。
+
+#### 同步阻塞
+
+举一个有趣的例子：
+
+```java
+public class Sync {
+    
+    private Map<String, Person> pList = Collections.synchronizedList(new HashMap<>());
+    
+    public synchronized void putIfAbsent(String key, Person p) {
+        if(!pList.contains(p)) {
+            pList.put(p);
+        }
+    }
+    
+    public Person get(String key) {
+        pList.get(key);
+    }
+    
+}
+```
+
+先不管这个程序有什么意义，只问一个问题，这个类是线程安全的吗？
+
+虽然看起来很像是线程安全的，但是实际上不是，因为 Collections.synchronizedList 使用的锁，肯定不是 Sync 的实例。
+
+#### Volatile 域
+
+仅仅为了读写一个或两个实例域就使用同步，显得开销过大了。Volatile 可以帮助我们在这种情况下避免使用锁。
+
+先来看看多个线程为什么会出现值不一致的原因：
+
+- 多处理器的计算机能够暂时在寄存器或本地内存缓存区中保存内存的值。结果是，运行在不同处理器上的线程可能在同一个内存位置取到不同的值。
+- 编译器可以改变指令执行的顺序以使吞吐量最大化。这种顺序上的变化不会改变代码语义，但是编译器假定内存的值仅仅在代码中有显示的修改指令时才会改变。然而，内存的值可以被另一个线程改变！
+
+早期的CPU使用的是总线锁的方式来保证 Volatile 域的一致性，现在都使用的是缓存一致性。
+
+#### final 变量
+
+如果在某个类中，将一个域声明为 final 类型，那么会起到这样的一个效果：
+
+> 其他的线程会在该类的构造函数执行完毕之后才能看到这个 final 域的值。
+
+#### 原子性
+
+假设对共享变量除了赋值之外并不完成其他操作，那么可以将这些共享变量声明为 volatile。
+
+java.util.concurrent.atomic 包中有很多类使用了<u>很高级的机器级指令（不是使用锁）</u>来保证其他操作的原子性。
+
+稍微提一下，使用 compareAndSet 实现乐观锁的常用写法：
+
+```java
+do {
+    oldValue = largest.get();
+    newValue = Math.max(oldValue, observed);
+} while (!largest.compareAndSet(oldValue, newValue));
+```
+
+compareAndSet 的工作原理：期望内存中的值是 oldValue，是则用 newValue 替换它，返回 true，不是则返回 false。
+
+如果有大量线程要访问相同的原子值，函数性能会大幅下降，因为乐观更新需要太多次重试。
+
+#### 锁测试与超时
+
+<u>lock 方法不能被中断，在获得锁之前会一直阻塞</u>，如果出现死锁，则 lock 方法无法终止。可以使用 tryLock 来响应中断。
+
+tryLock 还有一个隐藏特性：这个方法会抢夺可用的锁，即使该锁有公平加锁策略，即便其他线程已经等待很久也是如此。
+
+#### 为什么弃用 stop 和 suspend 方法
+
+stop 方法：该方法终止所有未结束的方法，包括 run 方法。当线程被终止，立即释放被它锁住的所有对象的锁。这会导致对象处于不一致的状态。
+
+例如：从 A 转账到 B，线程突然被终止，钱已经转出去了，却没有进入 B 账户，那么 Bank 对象就被破坏了。
+
+suspend 方法：如果用该方法挂起一个持有锁的线程，那么该锁在恢复之前是不可用的。如果调用 suspend 方法的线程试图获得同一个锁，那么程序死锁：被挂起的线程等着被恢复，而将其挂起的线程等待获得锁。
+
+#### ConcurrentHashMap 
+
+```java
+// map 是 ConcurrentHashMap 的实例
+Long oldValue = map.get(word);
+Long newValue = oldValue == null ? 1 : oldValue + 1;
+map.put(word, newValue);
+```
+
+在上面的例子中，由于操作不是原子的，所以最终的结果不可预料。但是，要理解 ConcurrentHashMap 与 HashMap 的区别，这里的 get 与 put 都是原子操作，在多线程情况下不会破坏 map 的结构，而 HashMap 在多线程情况下会出现循环链表等问题。
+
+ConcurrentHashMap 返回的迭代器具有弱一致性。这意味着迭代器不一定能反映出它们被构造之后的所有的修改（可以认为是某一特定时刻的快照），它们不会将同一个值返回两次，不会抛出 ConcurrentModificationException。
+
+#### CopyOnWriteArrayList 和 CopyOnWriteArraySet
+
+CopyOnWriteArrayList 和 CopyOnWriteArraySet 是线程安全的集合，其中所有的修改线程对底层数组进行复制。
+
+#### 线程池
+
+调用 shutdown 方法，该线程池不再接收新任务。当所有任务完成后，线程池死亡。
+
+调用 shutdownNow 方法，该线程池取消尚未开始的所有任务，并视图中断正在运行的线程。
+
+#### ExecutorCompletionService
+
+如果有大量的 Callable 要执行，可以使用这个类。
+
+#### Fork-Join 框架
+
+这个框架用来分解子任务，提高线程利用率。
+
+```java
+class Counter extends RecursiveTasks<Integer> {
+    protected Integer compute() {
+        if (to - from < THRESHOLD) {
+            // .....
+        } else {
+            int mid = (from + to) / 2;
+            Counter first = new Counter(values, from, mid, filter);
+            Counter second = new Counter(values, mid, to, filter);
+            // 阻塞
+            invokeAll(first, second);
+            // 合并
+            return first.join() + second.join();
+        }
+    }
+}
+```
+
+#### 信号量
+
+任何线程可以释放任何数量的许可，这可能会增加许可数目以至于超出初始数目。
+
+
+
+
 
