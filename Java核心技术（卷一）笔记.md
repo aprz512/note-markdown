@@ -72,7 +72,7 @@ ddoble w = x * y / z;
 public static void main(String\u005B\u005D args)
 ```
 
-\u005B\u005D其实就是[]，所以上面的代码就是程序的入口main函数。
+\u005B\u005D其实就是[]，所以上面的代码就是程序的入口main函数。（可以编译成class文件并运行，但是不被IDE识别）
 
 Unicode转义字符会在解析代码之前得到处理，举个吓死人的例子：
 
