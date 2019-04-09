@@ -379,5 +379,416 @@ liveData.postValue("a");
 
 
 
+### BoundaryCallback
+
+当本地存储缓存了网络数据时，我们通常会搭建这样的一个数据流：
+
+网络数据被分页到数据库中，数据库数据被分页到UI中。我们可以使用 LiveData\<PageList> 将数据分页到UI中，但是我们需要知道什么时候该要去请求网络数据。
+
+`BoundaryCallback` 这个接口就是用来做这件事的。
+
+```java
+    @MainThread
+    public abstract static class BoundaryCallback<T> {
+        /**
+         * Called when zero items are returned from an initial load of the PagedList's data source. 一开始本地存储没有数据，需要直接去网络中请求
+         */
+        public void onZeroItemsLoaded() {}
+
+        /**
+         * Called when the item at the front of the PagedList has been loaded, and access has
+         * occurred within {@link Config#prefetchDistance} of it.
+         * <p>
+         * No more data will be prepended to the PagedList before this item.
+         *
+         * @param itemAtFront The first item of PagedList
+         */
+        public void onItemAtFrontLoaded(@NonNull T itemAtFront) {}
+
+        /**
+         * Called when the item at the end of the PagedList has been loaded, and access has
+         * occurred within {@link Config#prefetchDistance} of it.
+         * <p>
+         * No more data will be appended to the PagedList after this item.
+         *
+         * @param itemAtEnd The first item of PagedList
+         */
+        public void onItemAtEndLoaded(@NonNull T itemAtEnd) {}
+    }
+```
+
+`onItemAtFrontLoaded` 与 `onItemAtEndLoaded` 是对应的，一个到达了数据源的最前面，一个到达了数据源的最后面，此时，都需要去加载网络数据。当然，一般情况下 `onItemAtFrontLoaded` 不需要处理，除非你有一个双向列表。
+
+由于，该接口的回调可能会被触发多次，所以，还提供了一个帮助类来辅助请求网络数据，用法如下：
+
+```kotlin
+class MyBoundaryCallback(
+        private val ioExecutor: Executor,
+        private val networkPageSize: Int)
+    : PagedList.BoundaryCallback<RedditPost>() {
+
+    // 创建 helper
+    val helper = PagingRequestHelper(ioExecutor)
+
+
+    /**
+     * Database returned 0 items. We should query the backend for more items.
+     */
+    @MainThread
+    override fun onZeroItemsLoaded() {
+        // 注意使用的是 runIfNotRunning 方法
+        // INITIAL 表示这是一个初始化请求
+        helper.runIfNotRunning(PagingRequestHelper.RequestType.INITIAL) {
+            webservice.getData(xxx)
+                    .enqueue(createWebserviceCallback(it))
+        }
+    }
+
+    /**
+     * User reached to the end of the list.
+     */
+    @MainThread
+    override fun onItemAtEndLoaded(itemAtEnd: RedditPost) {
+        // AFTER 表示数据到了最后
+        helper.runIfNotRunning(PagingRequestHelper.RequestType.AFTER) {
+            webservice.getData(xxx)
+                    .enqueue(createWebserviceCallback(it))
+        }
+    }
+
+
+    override fun onItemAtFrontLoaded(itemAtFront: RedditPost) {
+        // 一般情况下不用处理这个，列表被拉到最顶端了
+    }
+
+    private fun createWebserviceCallback(it: PagingRequestHelper.Request.Callback)
+            : Callback<RedditApi.ListingResponse> {
+        return object : Callback<RedditApi.ListingResponse> {
+            override fun onFailure(
+                    call: Call<RedditApi.ListingResponse>,
+                    t: Throwable) {
+                // 需要调用 helper 的失败回调
+                it.recordFailure(t)
+            }
+
+            override fun onResponse(
+                    call: Call<RedditApi.ListingResponse>,
+                    response: Response<RedditApi.ListingResponse>) {
+                // 需要调用 helper 的成功回调
+                // 当然，真的app不会在这里处理，这里只是演示
+          		it.recordSuccess()
+                // 将请求的数据放入数据库
+                insertItemsIntoDb(response)
+            }
+        }
+    }
+        
+	/**
+     * every time it gets new items, boundary callback simply inserts them into the database and
+     * paging library takes care of refreshing the list if necessary.
+     */
+    private fun insertItemsIntoDb(
+            response: Response<RedditApi.ListingResponse>) {
+        ...
+    }
+}
+```
+
+
+
+### ItemKeyedDataSource 与 PageKeyedDataSource 使用
+
+通常，DataSource 与 PageList 是成对存在的。他们可以看作是数据集的一份快照。当数据集被更新之后，需要重新创建一个新的 DataSouce 与 PageList 对。
+
+举个例子：
+
+当更新某个数据源之后，我们需要调用它的 invalidate 方法：
+
+```java
+mDataSource.invalidate();
+```
+
+查看源码，发现这个方法，只是遍历了一个回调集合，一个个的触发它们：
+
+```java
+    @AnyThread
+    public void invalidate() {
+        if (mInvalid.compareAndSet(false, true)) {
+            for (InvalidatedCallback callback : mOnInvalidatedCallbacks) {
+                callback.onInvalidated();
+            }
+        }
+    }
+```
+
+那么，这些回调是怎么使用的呢？是需要我们自行实现吗？
+
+在我翻看了一部分源码之后，找到了这样的逻辑：
+
+在 `LivePagedListBuilder`中：
+
+```java
+    @AnyThread
+    @NonNull
+    @SuppressLint("RestrictedApi")
+    private static <Key, Value> LiveData<PagedList<Value>> create(
+            ...) {
+        return new ComputableLiveData<PagedList<Value>>(fetchExecutor) {
+            ...
+
+            private final DataSource.InvalidatedCallback mCallback =
+                    new DataSource.InvalidatedCallback() {
+                        @Override
+                        public void onInvalidated() {
+                            invalidate();
+                        }
+                    };
+
+            @SuppressWarnings("unchecked") // for casting getLastKey to Key
+            @Override
+            protected PagedList<Value> compute() {
+                ...
+
+                do {
+                    ...
+
+                    mDataSource = dataSourceFactory.create();
+                    mDataSource.addInvalidatedCallback(mCallback);
+
+                    ...
+                } while (mList.isDetached());
+                return mList;
+            }
+        }.getLiveData();
+    }
+```
+
+我们可以看到，使用LivePageListBuilder时，它的 create 方法返回了一个`ComputableLiveData`对象，在这个对象中，它为 mDataSource 添加了 callback，我们跟踪一下，看看这个回调做了什么。
+
+```java
+ComputableLiveData.invalidate() ->
+ComputableLiveData.mInvalidationRunnable ->
+ComputableLiveData.mRefreshRunnable ->
+ComputableLiveData.compute() ->
+```
+
+我们看到，最终还是出发了 compute 方法，相当于又重新创建了一个 mDataSource 对象，所以这也刚好满足了 DataSource 的规范，当我们对数据源进行更新时，需要调用它的 invalidate 方法，这样 UI 才能收到变化通知。并且，如果要自己实现 DataSource，记得在 callback 回调里面重新创建 DataSouce，否则，也不会刷新。
+
+那么，还有一个疑问，没有解决，当我们使用 Room 的时候，对数据库进行更新时，我们没有使用DataSource，那么它是如何做到能够将更新反馈给UI的呢？
+
+以下面的一个方法为例：
+
+```kotlin
+@Dao
+public interface ProductDao {
+
+    @Query("SELECT products.* FROM products JOIN productsFts ON (products.id = productsFts.rowid) "
+        + "WHERE productsFts MATCH :query")
+    LiveData<List<ProductEntity>> searchAllProducts(String query);
+
+    @Update
+    void updatePrice(ProductEntity product);
+}
+
+```
+
+我们会在 ViewModel 中，获取 searchAllProducts 返回的 LiveData<List\<ProductEntity>>，然后，在 UI 中订阅这个对象，当我们使用 updatePrice 方法，更新了数据源时，LiveData<List\<ProductEntity>> 会将变化返回到 UI 中，现在，我们来看看这是如何实现的。
+
+```java
+  @Override
+  public LiveData<List<ProductEntity>> loadAllProducts() {
+    final String _sql = "SELECT * FROM products";
+    final RoomSQLiteQuery _statement = RoomSQLiteQuery.acquire(_sql, 0);
+    return __db.getInvalidationTracker().createLiveData(new String[]{"products"}, new Callable<List<ProductEntity>>() {
+      @Override
+      public List<ProductEntity> call() throws Exception {
+        ...
+      }
+
+      @Override
+      protected void finalize() {
+        _statement.release();
+      }
+    });
+```
+
+其实是利用 `createLiveData` 方法来返回了一个 LiveData 对象，注意这个对象复写了 finalize 方法，很少见。
+
+```java
+    public <T> LiveData<T> createLiveData(String[] tableNames, Callable<T> computeFunction) {
+        return mInvalidationLiveDataContainer.create(
+                validateAndResolveTableNames(tableNames), computeFunction);
+    }
+```
+
+注释我没贴，意思是说，当数据库变得无效的时候，它会利用 computeFunction 函数来重新创建一个 LiveData。
+
+那么，我们需要研究的就是，它是如何知道数据库变得无效的。继续追踪下去：
+
+```java
+    <T> LiveData<T> create(String[] tableNames, Callable<T> computeFunction) {
+        return new RoomTrackingLiveData<>(mDatabase, this, computeFunction, tableNames);
+    }
+```
+
+直接返回了一个 RoomTrackingLiveData 对象，这个名字就很有意思了，很大的可能，就是这个类能监听到数据库的变化。
+
+```java
+    RoomTrackingLiveData(...) {
+        ...
+        mObserver = new InvalidationTracker.Observer(tableNames) {
+            @Override
+            public void onInvalidated(@NonNull Set<String> tables) {
+                ArchTaskExecutor.getInstance().executeOnMainThread(mInvalidationRunnable);
+            }
+        };
+    }
+```
+
+看到了一个 mObserver 对象，它被触发时会在主线程执行一个 mInvalidationRunnable。这里有点似曾相识的感觉啊！
+
+```java
+    final Runnable mInvalidationRunnable = new Runnable() {
+        @MainThread
+        @Override
+        public void run() {
+            ...
+            if (...{
+                if (...){
+                    mDatabase.getQueryExecutor().execute(mRefreshRunnable);
+                }
+            }
+        }
+    };
+```
+
+调用了 mRefreshRunnable。
+
+```java
+    final Runnable mRefreshRunnable = new Runnable() {
+        @WorkerThread
+        @Override
+        public void run() {
+            ...
+            do {
+                ...
+                if (...) {
+                    
+                    try {
+                        ...
+                        while (...) {
+                            ...
+                            try {
+                                value = mComputeFunction.call();
+                            } catch (Exception e) {
+                                ...
+                            }
+                        }
+                        ...
+                    } finally {
+                        ...
+                    }
+                }
+                ...
+            } while (computed && mInvalid.get());
+        }
+    };
+```
+
+重新调用了 mComputeFunction 函数，这样就重新创建了 LiveData，那么我们还需要看看 mObserver 的回调是什么时候被触发的，被谁触发的。
+
+```java
+final Runnable mRefreshRunnable = new Runnable() {
+        @WorkerThread
+        @Override
+        public void run() {
+            if (mRegisteredObserver.compareAndSet(false, true)) {
+                mDatabase.getInvalidationTracker().addWeakObserver(mObserver);
+            }
+            ...
+        }
+    };
+```
+
+在 mRefreshRunnable 中，添加了这个观察者。
+
+```java
+    @Override
+    protected void onActive() {
+        super.onActive();
+        mContainer.onActive(this);
+        mDatabase.getQueryExecutor().execute(mRefreshRunnable);
+    }
+```
+
+mRefreshRunnable 不仅仅只是被 mInvalidationRunnable 调用，在 LiveData 接收第一个订阅者的时候，也会执行，这样就将 mObserver 注册为了观察者。
+
+```java
+    public void addWeakObserver(Observer observer) {
+        addObserver(new WeakObserver(this, observer));
+    }
+```
+
+```java
+    public void addObserver(@NonNull Observer observer) {
+        ...
+        ObserverWrapper wrapper = new ObserverWrapper(observer, tableIds, tableNames, versions);
+        ObserverWrapper currentObserver;
+        synchronized (mObserverMap) {
+            currentObserver = mObserverMap.putIfAbsent(observer, wrapper);
+        }
+        if (currentObserver == null && mObservedTableTracker.onAdded(tableIds)) {
+            syncTriggers();
+        }
+    }
+```
+
+这里都好理解，将 mObserver 添加到了一个 map 中。我们看看 map 中的订阅者，什么时候被循环调用。
+
+```java
+    Runnable mRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            final Lock closeLock = mDatabase.getCloseLock();
+            boolean hasUpdatedTable = false;
+            try {
+                ...
+            } finally {
+                closeLock.unlock();
+            }
+            if (hasUpdatedTable) {
+                synchronized (mObserverMap) {
+                    for (Map.Entry<Observer, ObserverWrapper> entry : mObserverMap) {
+                        entry.getValue().checkForInvalidation(mTableVersions);
+                    }
+                }
+            }
+        }
+```
+
+还是在 mRefreshRunnable 中，如果检查到了 table 有更新，那么就会遍历这个集合。我们暂时不去研究 hasUpdatedTable 这个值是如何得出的，因为涉及到数据库的知识，一时我也弄不清楚。再看，mRefreshRunnable 什么时候被调用。
+
+```java
+    /**
+     * Enqueues a task to refresh the list of updated tables.
+     * <p>
+     * This method is automatically called when {@link RoomDatabase#endTransaction()} is called but
+     * if you have another connection to the database or directly use {@link
+     * SupportSQLiteDatabase}, you may need to call this manually.
+     */
+    @SuppressWarnings("WeakerAccess")
+    public void refreshVersionsAsync() {
+        // TODO we should consider doing this sync instead of async.
+        if (mPendingRefresh.compareAndSet(false, true)) {
+            ArchTaskExecutor.getInstance().executeOnDiskIO(mRefreshRunnable);
+        }
+    }
+```
+
+注释说的很清楚了，当 RoomDatabase#endTransaction() 调用的时候，会自动触发，这样就说的通了。
+
+当我们使用 Room 更新数据库的时候，自动生成的代码，是使用了事务的，也就是说它会自动触发观察的的订阅方法。
+
 参考链接：
 
+https://medium.com/@chet.deva/android-paging-for-network-uncovered-b9cb85ca637b
