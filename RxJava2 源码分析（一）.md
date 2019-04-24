@@ -52,14 +52,23 @@ Observable.create<Int>(sourceClown)
 
 这个例子非常简单了，数据源发送一个int值 1，然后接收者判断值是不是1。
 
+
+
 现在开始分析源码了，先看 Observable 的 create 方法：
+
+> Observable.java
+>
+> 该方法创建一个 Observeable 对象。分析完成之后，你就会发现实际上就是创建了一个 ObservableCreate 对象。
 
 ```java
 public static <T> Observable<T> create(ObservableOnSubscribe<T> source) {
+    // 这个是判空，嗯，没啥好说的，我一般用注解。
     ObjectHelper.requireNonNull(source, "source is null");
     return RxJavaPlugins.onAssembly(new ObservableCreate<T>(source));
 }
 ```
+
+
 
 #### 套路一
 
@@ -67,20 +76,15 @@ public static <T> Observable<T> create(ObservableOnSubscribe<T> source) {
 
 上面的 create 方法中，看起来有两行代码，感觉做了一些了不得的东西，但是实际上只有半行代码在起主要作用。
 
-第一行代码：
 
-```java
-ObjectHelper.requireNonNull(source, "source is null");
-```
-
-这个是判空，嗯，没啥好说的，我一般用注解。
 
 第二行代码的前半行：
 
-```java
-	RxJavaPlugins.onAssembly(source);
+> RxJavaPlugins.java
+>
+> 该方法在 onObservableAssembly 不会空的情况下会对 source 做一个变换，否则返回 source。
 
--------------------------------------------------------
+```java
 
     public static <T> Observable<T> onAssembly(@NonNull Observable<T> source) {
         Function<? super Observable, ? extends Observable> f = onObservableAssembly;
@@ -91,9 +95,13 @@ ObjectHelper.requireNonNull(source, "source is null");
     }
 ```
 
-其实就是返回了传进来的参数，因为 onObservableAssembly 绝大部分情况下为空，需要注意，这个套路在源码中很常见。
+因为 onObservableAssembly 绝大部分情况下为空，其实就是返回了传进来的参数。所以该方法基本可以忽略。
 
-所以最后，我们可以把 create 方法理解为：
+**需要注意，这个套路在源码中很常见。**
+
+
+
+所以最后，我们可以把 Observeable 的 create 方法理解为：
 
 ```java
     public static <T> Observable<T> create(@NotNull ObservableOnSubscribe<T> source) {
@@ -107,13 +115,31 @@ ObjectHelper.requireNonNull(source, "source is null");
 
 继续深入，看看 ObservableCreate 有何德何能！
 
+> ObservableCreate .java
+>
+> ObservableCreate 继承至 Observable。
+
 ```java
 public final class ObservableCreate<T> extends Observable<T> {...}
 ```
 
-ObservableCreate 继承至 Observable。
+别看 Observable 有**1w 多行代码**，但是实际上**只有一个抽象方法**，其他的都是用来做操作符等等。
 
-别看 Observable **1w 多行代码**，但是实际上**只有一个抽象方法**，其他的都是用来做操作符等等。
+
+
+下面来看看这个抽象方法，后面会分析到。
+
+> Observable.java
+>
+> 该方法由 Observable 的 subscribe 方法调用，即 Observable.create(xxx).subscribe(xxx);
+>
+> subscribe 就会调用 subscribeActual
+
+```java
+    protected abstract void subscribeActual(Observer<? super T> observer);
+```
+
+
 
 #### 套路二
 
@@ -132,6 +158,10 @@ ObservableCreate 继承至 Observable。
 
 
 ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯，一起来看看吧。
+
+> ObservableCreate.java
+>
+> 该方法由 Observable 的 subscribe 方法调用，即 Observable.create(xxx).subscribe(xxx);
 
 ```java
     @Override
@@ -152,6 +182,10 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
 
 1. **source 是我们创建并传递进来的**。额，忘记贴构造函数了，里面有赋值，这个 source 就是我们在 create 方法里面创建的对象啦。
 
+   > ObservableCreate.java
+   >
+   > 构造方法
+
    ```java
        public ObservableCreate(ObservableOnSubscribe<T> source) {
            this.source = source;
@@ -160,7 +194,15 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
 
    ![](rxjava2(2).png)
 
+   
+
 2. observer 这里暂时分析不出来，因为是父类调用了这个方法，所以我们去父类看看
+
+   > Observable.java
+   >
+   > 这个方法的主要作用，就是将数据源与观察者关联起来
+   >
+   > 它还调用了 subscribeActual 方法，子类必须实现 subscribeActual  方法。
 
    ```java
        public final void subscribe(Observer<? super T> observer) {
@@ -186,7 +228,13 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
        }
    ```
 
+   
+
    使用套路一，我们简化一下代码：
+
+   > Observable.java 
+   >
+   > subscribe 简化后的代码
 
    ```java
        public final void subscribe(Observer<? super T> observer) {
@@ -204,7 +252,13 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
        }
    ```
 
+   
+
    如果，是走正常流程，没有错误，还可以简化（第一次分析主流程，就是要这样简化简化再简化）：
+
+   > Observable.java 
+   >
+   > subscribe 简化后的代码
 
    ```java
        public final void subscribe(Observer<? super T> observer) {
@@ -213,7 +267,13 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
        }
    ```
 
+   
+
    实际上，RxJavaPlugins.onSubscribe 也含有套路一，所以再次简化：
+
+   >Observable.java 
+   >
+   >subscribe 简化后的代码
 
    ```java
        public final void subscribe(Observer<? super T> observer) {
@@ -224,6 +284,8 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
    ```
 
    所以，最终实际上 subscribe 方法，就是调用了 subscribeActual 方法而已，只不过它增加了错误与钩子处理。
+
+   
 
    看到这里，**不知道你有没有反应过来，这个 subscribe(observer) 方法是不是很熟悉呢**？
 
@@ -238,9 +300,13 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
 
    是不是有点恍然大悟的感觉呢！
 
-   所以到这里，我们就清楚了。
+   
 
-   `ObservableCreate `  的 `subscribeActual` 方法中**的 `observer` 参数，也是我们new出来的对象**。
+   所以到这里，心里应该由一个大致框架了。
+
+   
+
+   同时也会发现，`ObservableCreate `  的 `subscribeActual` 方法中**的 `observer` 参数，也是我们new出来的对象**。
 
    ![](rxjava2(3).png)
 
@@ -249,6 +315,12 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
 分析到了这里，一个轮廓就出来了!!!
 
 `ObservableCreate `  的 `subscribeActual` 方法中的 参数分别对应如下：
+
+> ObservableCreate.java
+>
+> ObservableCreate 继承至 Observable，所以它必须实现 subscribeActual 方法。
+>
+> 这个方法也是核心，是链式调用的核心，线程切换的核心
 
 ```java
     @Override
@@ -268,7 +340,13 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
     }
 ```
 
+
+
 如果，不考虑错误的情况，我们简化一下代码：
+
+> ObservableCreate.java
+>
+> subscribeActual 简化后的代码
 
 ```java
     @Override
@@ -283,7 +361,13 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
     }
 ```
 
+
+
 由于，onSubscribe 我们暂时也不用，所以去掉，再简化：
+
+>ObservableCreate.java
+>
+>subscribeActual 简化后的代码
 
 ```java
     @Override
@@ -296,7 +380,11 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
 
 嘿嘿嘿，这样就舒服多了，就3个变量，两个是我们自己创建的，知根知底，还有一个货，`CreateEmitter`我们先放一放，为啥呢，因为关于 source 的代码还没有分析完成呢。
 
+
+
 别看  `source.subscribe(parent);`就一行代码，但是由于 source 对象是我们自己创建的，所以这个方法实际上调用了我们写的代码：
+
+> ObservableOnSubscribe.java
 
 ```java
 public interface ObservableOnSubscribe<T> {
@@ -304,15 +392,17 @@ public interface ObservableOnSubscribe<T> {
 }
 ```
 
-`ObservableOnSubscribe`是一个接口，所以，我们实际上是创建了一个匿名内部类，传递给了 source，然后 source 又调用了 subscribe 方法，所以也就调用了我们写的代码：
+
+
+ObservableOnSubscribe`是一个接口，所以，我们实际上是创建了一个匿名内部类，传递给了 source，然后 source 又调用了 subscribe 方法，所以也就调用了我们写的代码：
+
+> 我们自己写的 demo 代码
 
 ```java
 // 这里的 it 是 ObservableEmitter
 it.onNext(1)
 it.onComplete()
 ```
-
-到这里，sourceClown 不仅开始搞事情，事情都被他搞完了。
 
 
 
@@ -328,6 +418,8 @@ it.onComplete()
 
 我们先不忙着去看它的 onNext 方法，先看看这个类。
 
+
+
 #### 套路三
 
 > 由老父亲来替你打理一切
@@ -341,6 +433,8 @@ it.onComplete()
 由于`ObservableOnSubscribe` 的 `subscribe`方法只接受 `ObservableEmitter` ，所以  `CreateEmitter`  必须要实现这个接口。
 
 好，我们看源代码：
+
+> CreateEmitter.java
 
 ```java
     static final class CreateEmitter<T>
@@ -370,7 +464,13 @@ it.onComplete()
 it.onNext(1)
 ```
 
-所以，它的 onNext 方法会被调用。现在，我们来分析它的 onNext 方法：
+所以，它的 onNext 方法会被调用。
+
+
+
+现在，我们来分析它的 onNext 方法：
+
+> CreateEmitter.java
 
 ```java
         @Override
@@ -386,6 +486,10 @@ it.onNext(1)
 ```
 
 RxJava2 中不允许数据源发射的数据为 null，所以我们简化一下：
+
+> CreateEmitter.java
+>
+> onNext 简化后的代码
 
 ```java
         @Override
@@ -404,6 +508,10 @@ isDisposed 方法，就是判断观察者有没有解除订阅，毕竟，蝙蝠
 
 在我们的例子中，我们没有解除订阅，再简化一下，就是：
 
+> CreateEmitter.java
+>
+> onNext 简化后的代码
+
 ```java
         @Override
         public void onNext(T t) {
@@ -413,7 +521,11 @@ isDisposed 方法，就是判断观察者有没有解除订阅，毕竟，蝙蝠
 
 这下，够直白了吧，直接调用了 observer 的 onNext 方法。
 
+
+
 还记得 observer 是谁吗，就是你，蝙蝠侠，observerBatMan。所以它的 onNext 方法会被调用。
+
+> 我们写的 demo 的代码
 
 ```java
 override fun onNext(t: Int) {
