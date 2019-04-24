@@ -115,6 +115,22 @@ ObservableCreate 继承至 Observable。
 
 别看 Observable **1w 多行代码**，但是实际上**只有一个抽象方法**，其他的都是用来做操作符等等。
 
+#### 套路二
+
+> 遵循模板：
+>
+> 1. 将source封装一下，变成一个 Observable
+>
+> 2. 将 observer 封装一下，变成一个Emitter，
+>
+> 3. 然后调用 source 的 onSubscribe 方法，
+>
+> 4. 然后调用 source 的 subscribe 方法，将 Emitter 传进去。
+
+**其实只要你知道 observer 是谁，source 是谁，很简单的啦。**
+
+
+
 ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯，一起来看看吧。
 
 ```java
@@ -298,22 +314,27 @@ it.onComplete()
 
 到这里，sourceClown 不仅开始搞事情，事情都被他搞完了。
 
-#### 套路二
 
-> 上面的一大段都属于一个套路，
+
+那么，当 it.onNext(1) 执行之后，又会发生什么呢？
+
+这个 it 就是 CreateEmitter，嗯，虽然有点突然，但是这个应该没有疑问吧？！！
+
+> 1. 我们把 sourceClown 传进去，并且调用了 ObservableEmitter 的 onNext 等方法
+> 2. sourceClown 被封装成了 CreateEmitter
+> 3. source 的 subscribe 方法接收的是 CreateEmitter，
 >
-> 1. 就是将 observer 封装一下，变成一个Emitter，
->
-> 2. 然后调用 source 的 onSubscribe 方法，
-> 3. 然后调用 source 的 subscribe 方法，将 Emitter 传进去。
+> 所以，ObservableEmitter 在运行时就是 CreateEmitter 对象。
 
-**其实只要你知道 observer 是谁，source 是谁，很简单的啦。**不过调用的链太长了之后，我还是会搞晕。
+我们先不忙着去看它的 onNext 方法，先看看这个类。
 
+#### 套路三
 
+> 由老父亲来替你打理一切
 
-那么，当 it.onNext(1) 执行之后，又会发生什么呢？我们知道在**套路二**里面，我们传递的 sourceClown 被封装了一下，变成了一个 `CreateEmitter` 。
+我们知道在**套路二**里面，我们传递的 sourceClown 被封装了一下，变成了一个 `CreateEmitter` 。
 
-`CreateEmitter` 这个变量名就很叼，一看就是 observer 的老父亲，那么，猜一猜，为啥它要起这样一个名呢？
+`CreateEmitter` 这个变量名就很叼，一看就是 observer 的老父亲，那么，可以先猜一猜，为啥它要起这样一个名呢？
 
 
 
@@ -341,23 +362,15 @@ it.onComplete()
 
 嗯，很好，observer 被保存起来了。
 
+
+
 由于，在 observerClown 中我们调用了：
 
 ```java
 it.onNext(1)
 ```
 
-这个 it 就是 CreateEmitter，额，这个应该没有疑问吧？！！
-
-> 1. 我们把 sourceClown 传进去，并且调用了 ObservableEmitter 的 onNext 等方法
->
-> 2. sourceClown 被封装成了 CreateEmitter
->
-> 3. source 的 subscribe 方法接收的是 CreateEmitter，
->
-> 所以，ObservableEmitter 在运行时就是 CreateEmitter 对象。
-
-所以，它的 onNext 方法会被调用。
+所以，它的 onNext 方法会被调用。现在，我们来分析它的 onNext 方法：
 
 ```java
         @Override
@@ -387,9 +400,7 @@ isDisposed 方法，就是判断观察者有没有解除订阅，毕竟，蝙蝠
 
 这上面做了这么多判断，现在知道为啥起名叫 parent 了不？
 
-#### 套路三
 
-> 由老父亲来替你打理一切
 
 在我们的例子中，我们没有解除订阅，再简化一下，就是：
 
