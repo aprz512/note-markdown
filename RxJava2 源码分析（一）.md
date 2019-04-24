@@ -103,6 +103,10 @@ public static <T> Observable<T> create(ObservableOnSubscribe<T> source) {
 
 所以最后，我们可以把 Observeable 的 create 方法理解为：
 
+> Observable.java
+>
+> create 简化后的代码
+
 ```java
     public static <T> Observable<T> create(@NotNull ObservableOnSubscribe<T> source) {
         return new ObservableCreate<T>(source);
@@ -291,6 +295,8 @@ ObservableCreate 的核心代码就在这个被覆盖的抽象方法里面，嗯
 
    这个方法，就是我们上面例子中的：
 
+   > 我们写的 demo 的代码
+
    ```kotlin
    // 开始观察
    Observable.create<Int>(sourceClown)
@@ -448,6 +454,8 @@ it.onComplete()
 
 继续看构造方法：
 
+> CreateEmitter.java
+
 ```java
         CreateEmitter(Observer<? super T> observer) {
             this.observer = observer;
@@ -459,6 +467,8 @@ it.onComplete()
 
 
 由于，在 observerClown 中我们调用了：
+
+> 我们写的 demo 的代码
 
 ```java
 it.onNext(1)
