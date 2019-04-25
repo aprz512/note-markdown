@@ -121,7 +121,7 @@ public static <T> Observable<T> create(ObservableOnSubscribe<T> source) {
 
 > ObservableCreate .java
 >
-> ObservableCreate 继承至 Observable。
+> ObservableCreate 继承至 Observable。这个继承还有一个非常重要的作用，就是方便链式调用。
 
 ```java
 public final class ObservableCreate<T> extends Observable<T> {...}
@@ -400,7 +400,23 @@ public interface ObservableOnSubscribe<T> {
 
 
 
-ObservableOnSubscribe`是一个接口，所以，我们实际上是创建了一个匿名内部类，传递给了 source，然后 source 又调用了 subscribe 方法，所以也就调用了我们写的代码：
+`ObservableOnSubscribe`是一个接口，所以，我们实际上是创建了一个匿名内部类，传递给了 source，然后 source 又调用了 subscribe 方法，所以也就调用了我们写的代码。
+
+嗯，用伪代码表示如下：
+
+```
+1. 匿名内部类 = new ObservableOnSubscribe(){}
+
+2. oc = Observerable.create(匿名内部类)
+
+3. oc.subscribe(xxx)，这个方法会调用到 -> subscribeActual
+
+4. subscribeActual 会调用到 -> 匿名内部类.subscribe(emiiter)
+
+5. 我们的代码
+```
+
+
 
 > 我们自己写的 demo 代码
 
@@ -466,7 +482,7 @@ it.onComplete()
 
 
 
-由于，在 observerClown 中我们调用了：
+由于，在 sourceClown 中我们调用了：
 
 > 我们写的 demo 的代码
 
@@ -474,7 +490,7 @@ it.onComplete()
 it.onNext(1)
 ```
 
-所以，它的 onNext 方法会被调用。
+上面说过，it 就是 CreateEmitter，所以 CreateEmitter的 onNext 方法会被调用。
 
 
 
@@ -510,7 +526,7 @@ RxJava2 中不允许数据源发射的数据为 null，所以我们简化一下�
         }
 ```
 
-isDisposed 方法，就是判断观察者有没有解除订阅，毕竟，蝙蝠侠也会心累，带不动，带不动。
+isDisposed 方法，就是判断观察者有没有解除订阅，毕竟，蝙蝠侠也会心累。
 
 这上面做了这么多判断，现在知道为啥起名叫 parent 了不？
 
@@ -550,3 +566,24 @@ override fun onNext(t: Int) {
 最后上一张图：
 
 ![](rxjava2(1).png)
+
+
+
+最后，还有一个很重要的东西，就是这个小demo 的起始点，并不是 sourceClown，上面的图不是程序执行流程图，而是一种关系图。
+
+现在我们来看看，程序的起始点在哪？
+
+> 我们写的 demo 代码
+
+```java
+// 开始观察
+Observable.create<Int>(sourceClown)
+    .subscribe(observerBatMan)
+```
+
+程序的起始点是 subscribe 方法，这个方法是属于 ObservableCreate 的，**所以程序的起始点在 ObservableCreate 的 subscribe 方法**。
+
+下面，贴上程序执行流程图：
+
+![](rxjava2(4).png)
+
