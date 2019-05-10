@@ -8,6 +8,40 @@
 
 首先要说明的是，RxJava2 中虽然使用到了 Java 的线程池，但是还有很多其他的东西，比如，接下来你就会看到 IoScheduler 中自己实现一个简单的线程池。
 
+### 从使用说起
+
+```java
+// RxJava
+Scheduler.Worker worker = Schedulers.io().createWorker();
+worker.schedule();
+
+// Java
+ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
+scheduledExecutorService.schedule()
+```
+
+先不谈运行原理，这里我们比较一下它与我们平时使用的线程池的不同之处。
+
+一般我们使用的时候，都是先获取线程池的对象，然后传递一个 runnable 给它，让它取执行。
+
+但是 RxJava 里面，似乎有点不一样。它需要先创建 worker 对象，然后才能将 action 传递给它。与Java方式比较，它多了一个创建 worker 的过程，那么显然本文的核心就是弄清楚，worker 对象是做什么的？为什么设计成需要 worker 对象才能提交任务？
+
+
+
+先说说每个类具体的作用：
+
+| 类名                 | 作用                                                         |
+| -------------------- | ------------------------------------------------------------ |
+| Worker               | **抽象类**，提供了执行 action 的几个方法，支持单次执行，定时多次执行。定时多次执行是基于单次执行，默认已经在该类中实现。 |
+| NewThreadWorker      | **Worker 的子类**，实现了单次执行方法，使用的是 Executors.newScheduledThreadPool 方法。 |
+| ThreadWorker         | NewThreadWorker 的子类，增强了一下，提供了过期时间的判断方法。 |
+| SequentialDisposable | **一种容器**，用来放入 Disposable 的引用，允许以原子方式更新/替换引用值。经过不断的替换引用，从而达到可以支持 Worker 多次执行任务仍然能够 dispose 的功能。 |
+| ScheduledRunnable    | 该类是一个集大成的类，它是一个可以**取消任务**，也可以**取消订阅**的 runnable。 |
+| AbstractDirectTask   | 这货虽然名字是 task，然是实际上与 ScheduledRunnable 是一路货色，当成 runnable 也可以。 |
+| ScheduledDirectTask  | AbstractDirectTask 的子类                                    |
+| EventLoopWorker      | **Worker 的子类**，使用的是 **NewThreadWorker** 实现了单次执行。 |
+| CachedWorkerPool     | Rxjava自己实现的一个线程池。                                 |
+
 
 
 ### 从内部类开始
@@ -805,5 +839,5 @@ public Worker createWorker() {
 
 
 
-好了，文章就走到尾声了，其他的线程池，交给你们了。
+感觉，EventLoopWorker 的作用，只是一个代理啊，最后还是将任务转给了 CachedWorkerPool。可能为了支持 dispose 操作花费了很多心思。
 
