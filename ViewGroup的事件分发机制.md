@@ -438,7 +438,7 @@ postCheckForLongClick(ViewConfiguration.getTapTimeout())这段代码就是执行
 
 要想执行点击事件，**这个View就必须要消费ACTION_DOWN和ACTION_MOVE事件，并且没有设置OnLongClickListener的情况下。**
 
-**如果设置了OnLongClickListener的情况下，需要onLongClick()返回false才能执行到onClick()方法**（现在我终于明白了了为什么 OnLongClickListener 会有一个返回值！！长按事件是点击事件的一种特殊情况，既然要判断特殊情况，需要一个返回值也是一种思路），也许你又会纳闷，一般的View默认是不消费touch事件的，这不是和你上面说的相违背嘛，我们要想执行点击事件必须要调用setOnClickListener()来设置OnClickListener接口，我们看看这个方法的源码就知道了。
+**如果设置了OnLongClickListener的情况下，需要onLongClick()返回false才能执行到onClick()方法**，也许你又会纳闷，一般的View默认是不消费touch事件的，这不是和你上面说的相违背嘛，我们要想执行点击事件必须要调用setOnClickListener()来设置OnClickListener接口，我们看看这个方法的源码就知道了。
 
 ```java
    	public void setOnClickListener(OnClickListener l) {
@@ -695,6 +695,14 @@ MotionGroupView: onTouchEvent: 2
 MotionGroupView: dispatchTouchEvent: 1
 MotionGroupView: onTouchEvent: 1
 ```
+
+
+
+### 后记
+
+一个 ViewGroup 只拦截事件但是不处理，这个事件的后续事件也再不会传递给该ViewGroup。
+
+如果事件没有View可以处理，那么最后只能交给Activity来处理，即使Activity也不处理该事件，它的 onTouchEvent 方法仍然会一直被调用。Activity就像是最后的负责人，不管事件能不能处理，都会交给它。
 
 
 

@@ -90,7 +90,7 @@
 
   category 匹配：
 
-  > 如果Intent中出现了 category，不管有一个 category，对于每个category来说，它必须是过滤规则中已经定义了的category。
+  > 如果Intent中出现了 category，不管有几个 category，对于每个category来说，它必须是过滤规则中已经定义了的category。
   >
   > 
   >
@@ -102,7 +102,7 @@
   >
   > 需要了解 data 的结构。data由两部分组成，mineType和URI。
   >
-  > 当指定了 mineType，却没有指定 URI 时。过滤规则有默认的 URI 值，为 content 和 file。所以我们必须要使用 setDataAndType 方法来指定
+  > 当指定了 mineType，却没有指定 URI 时。过滤规则有默认的 URI 值，为 content 和 file。所以我们必须要使用 setDataAndType 方法来指定。
 
 - queryIntentActivities 与 resolveActivity
 
@@ -208,5 +208,80 @@
   >
   > getX、getY 是相对于当前 View 左上角的 x 与 y 坐标，getRawX、getRawY 返回的是相对于手机屏幕上左上角的 x、y坐标。
 
+- View 的滑动
+
+  - 使用 scrollTo/scrollBy，scrollBy 也是内部调用了 scrollTo 方法
+
+    需要注意一下scrollX与 scrollY值的正负
+
+    ![](F:\note-markdown\Android开发艺术探索\view_scroll.png)
+
+  - 使用动画，注意补间动画与属性动画的区别
   
+  - 改变布局参数
+  
+- View 的弹性滑动
+
+  - 使用 Scroller，需要复写 computeScroll 方法
+
+    ```java
+    @Override
+    public void computeScroll () {
+        if (mScroller.computeScrollOffset()) {
+            scrollTo(mScroller.getCurrX(), mScroller.getCurrY());
+            postInvalidate();
+        }
+    }
+    ```
+
+    其原理是：startScroll 方法会触发 view 的 invalidate 方法，invalidate 方法会调用 computeScroll 方法，computeScroll 调用 computeScrollOffset 方法，computeScrollOffset 会按照动画执行的时间计算出滚动的位置。所以，mScroller 可以拿到动画需要滚动的x，y位置， 利用 scrollTo 就可以让内容滚动。然后再次触发 postInvalidate，实现循环，直到 computeScrollOffset 方法返回 false，表示动画执行完了。
+
+  - 通过动画与插值器
+
+  - 使用延时策略，手动更新
+
+- View 的事件分发机制
+
+  **public boolean dispathTouchEvent(MotionEvent ev)**
+
+  用来进行事件的分发。表示是否消耗当前事件，返回值受到当前 View 的 onTouchEvent 与下级 View 的 dispatchTouchEvent 影响。比如，之前非常流行的头部拖动方法效果：一个专辑界面，头部有一张专辑图片，下面是专辑列表，滑动专辑列表到最上面，然后继续滑动，此时，头部的专辑图片会放大。整个滑动体验非常流畅。按照一般的理解，这是很难做到的，毕竟，将事件交给底部专辑列表处理之后，后续所有的事件都只能给它处理，这样就做不到连续滑动到顶部再滑动时头部放大的效果了。所以这里只能手动的干预滑动事件，在未滑动到列表顶部时，把事件派给专辑列表，在滑动到列表顶部时，继续滑动时，把事件派给专辑图片。
+
+  **public boolean onInterceptTouchEvent(MotionEvent event)**
+
+  在 dispathTouchEvent 方法的内部调用，用来判断是否拦截某个事件，如果当前 View 拦截了某个事件，那么在同一个事件序列当中，此方法不会被再次调用。
+
+  **public boolean onTouchEvent(MotionEvent event)**
+
+  在 dispathTouchEvent 方法的内部调用，返回结果表示是否消耗当前事件，如果不消耗，则在同一事件序列中，当前 View 无法再次接收到事件。
+
+  
+
+  当一个触摸事件产生后，它的传递过程如下：
+
+  Activity -> Window -> DecorView
+
+  由于 DecorView 是一个 ViewGroup，所以事件的传递要从 ViewGroup 说起。
+
+  ViewGroup 的 dispathTouchEvent 被调用，
+
+  -  如果它的 onInterceptTouchEvent 返回 true，那么事件会交它来处理，接着它的 onTouchEvent 方法被调用。
+
+    -  如果它的 onTouchEvent  返回 true，表示它可以处理这个事件，那么后续事件都会交给这个 ViewGroup 来处理，并且它的 onInterceptTouchEvent 在后续事件中不再调用。
+
+    - 如果它的 onTouchEvent   返回 false，表示它无法处理该事件，那么后续事件不会再传递到该 ViewGroup 这一层。
+
+  - 如果它的 onInterceptTouchEvent 返回 false，事件就会向它的 child 传递（会循环遍历所有的 child，以 z-index 顺序，找到 View 的范围包含点击区域的可见View，这里的描述可能不太准确，好像还与动画有关，然后把这个事件派发给这个 View）。如果这个 child 是一个 ViewGroup 那么，就重复上面的逻辑，如果 child 是 view...
+
+  View 的 dispathTouchEvent 方法被调用，
+
+  - 由于它没有 onInterceptTouchEvent 方法，所以会直接调用它的 onTouchEvent 方法。
+    -  如果它的 onTouchEvent  返回 true，表示它可以处理这个事件，那么后续事件都会交给它
+    - 如果它的 onTouchEvent   返回 false，表示它无法处理该事件，
+  - 需要注意的是，View 可以设置 onTouchListener，
+    - 当 listener 的 onTouch 方法返回了 false 的时候，onTouchEvent 可以正常调用
+    - 当 listener 的 onTouch 方法返回了 true 的时候，onTouchEvent 不会被调用
+  - onClick 的调用是在 onTouchEvent 中
+  - onClick 与 onLongClick，onLongClick 的原理
+
+- View 的滑动冲突
 
