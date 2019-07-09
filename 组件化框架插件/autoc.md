@@ -81,7 +81,7 @@
         }
     
         dependencies {
-            classpath 'com.aprz.module.manager:autoc:1.5.0'
+            classpath 'com.aprz.module.manager:autoc:+'
         }
     
     ```
