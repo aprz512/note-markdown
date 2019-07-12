@@ -8,6 +8,10 @@ DataBinding 是一个支持库，它可以将布局中的界面组件绑定到�
 
 
 
+PS：**因为每个项目生成的代码不一致，而且我使用了多个项目生成的代码，所以看的时候不要太纠结，尽量理解为主。**
+
+
+
 举个例子吧，我们的布局如下：
 
 > app\src\main\res\layout\content_main.xml
@@ -208,4 +212,363 @@ public class ContentMainBindingImpl extends ContentMainBinding
 ```
 
 这里调用了一个叫做 mapBindings 的方法，就是它解析了View的 tag ，然后将view存储到了一个数组中，在将这个数组赋值给成员变量，这样我们就不用 findViewById 了，因为它的方法比较长，所以我不贴代码了，就简单的说一下它的工作过程。
+
+> androidx.databinding.ViewDataBinding#mapBindings(androidx.databinding.DataBindingComponent, android.view.View, java.lang.Object[], androidx.databinding.ViewDataBinding.IncludedLayouts, android.util.SparseIntArray, boolean)
+
+```java
+        if (isRoot && tag != null && tag.startsWith("layout")) {
+            final int underscoreIndex = tag.lastIndexOf('_');
+            if (underscoreIndex > 0 && isNumeric(tag, underscoreIndex + 1)) {
+                // 这里的 index 就是 content_main_0 的 0
+                final int index = parseTagInt(tag, underscoreIndex + 1);
+                if (bindings[index] == null) {
+                    bindings[index] = view;
+                }
+                indexInIncludes = includes == null ? -1 : index;
+                isBound = true;
+            } else {
+                indexInIncludes = -1;
+            }
+        }
+```
+
+首先是获取到 tag 以 layout 开头的 View，将这个view 放入到 bindings[0] 中。
+
+
+
+```java
+        } else if (tag != null && tag.startsWith(BINDING_TAG_PREFIX)) {
+            // 这里的 index 是 binding_1 的 1，当然不只是 1，还有 2，3....
+            int tagIndex = parseTagInt(tag, BINDING_NUMBER_START);
+            if (bindings[tagIndex] == null) {
+                bindings[tagIndex] = view;
+            }
+            isBound = true;
+            indexInIncludes = includes == null ? -1 : tagIndex;
+        }
+```
+
+然后获取以 tag 为 binding_ 开头的 View，放入到 bindings[1...n] 中。
+
+
+
+```java
+        if (!isBound) {
+            final int id = view.getId();
+            if (id > 0) {
+                int index;
+                if (viewsWithIds != null && (index = viewsWithIds.get(id, -1)) >= 0 &&
+                        bindings[index] == null) {
+                    bindings[index] = view;
+                }
+            }
+        }
+```
+
+最后，如果控件没有id，但是使用了 `@{}` 的用法，也会存入 bindings 数组中，这个index也是接着上面 binding_ 的数字，比如，上面最后一个是 binding_5，这里的 index 就是从 6 开始了，这些数值都是编译器生成好了的。我猜想是在处理 xml 的时候，就需要生成对应的类，然后将index对应好。
+
+
+
+有了这个数组，显然只需要将它赋值给对应的变量就好了。我们可以生成控件的成员变量，然后以驼峰式命名，将数组的值赋值给对应的变量。
+
+> com.aprz.snackbardemo.databinding.ContentMainBindingImpl#ContentMainBindingImpl(androidx.databinding.DataBindingComponent, android.view.View, java.lang.Object[])
+
+```java
+    private ContentMainBindingImpl(androidx.databinding.DataBindingComponent bindingComponent, View root, Object[] bindings) {
+        super(bindingComponent, root, 0
+            , (android.widget.TextView) bindings[4]
+            , (android.widget.TextView) bindings[1]
+            , (android.widget.TextView) bindings[2]
+            );
+        this.mboundView0 = (android.widget.LinearLayout) bindings[0];
+        this.mboundView0.setTag(null);
+        this.mboundView3 = (android.widget.TextView) bindings[3];
+        this.mboundView3.setTag(null);
+        this.tvName.setTag(null);
+        this.tvSex.setTag(null);
+        setRootTag(root);
+        // listeners
+        invalidateAll();
+    }
+
+----------------------------------------
+    
+  protected ContentMainBinding(Object _bindingComponent, View _root, int _localFieldCount,
+      TextView tvClassName, TextView tvName, TextView tvSex) {
+    super(_bindingComponent, _root, _localFieldCount);
+    this.tvClassName = tvClassName;
+    this.tvName = tvName;
+    this.tvSex = tvSex;
+  }
+```
+
+从代码里面可以看出，它确实是将bindings赋值给了成员变量。没有id的无法外部使用 ，所以是 ContentMainBindingImpl 的成员变量，内部名字叫做 mboundViewXXX。
+
+![](F:\note-markdown\DataBinding原理分析\未命名表单.png)
+
+
+
+ 说了这么多，只是讲了一下它的如何不用 findViewById 的。但是 DataBinding 还有更重要的作用，就是数据绑定，我们接下来分析分析，它是如何将数据绑定到 UI 的，而且数据更新之后，是如何改变 UI 的！！！
+
+
+
+实现数据绑定，我们需要调用binding.setVariable或者binding.setViewModel，两者效果一样，因为setVariable会间接调用setViewModel方法。
+
+> com.aprz.databinding.ContentMainBindingImpl
+
+```java
+    // variableId 是生成的BR文件中的一个变量，对应于你在 xml 中设置的变量
+	@Override
+    public boolean setVariable(int variableId, @Nullable Object variable)  {
+        boolean variableSet = true;
+        if (BR.viewModel == variableId) {
+            setViewModel((com.aprz.snackbardemo.User) variable);
+        }
+        else {
+            variableSet = false;
+        }
+        return variableSet;
+    }
+
+    public void setViewModel(@Nullable com.aprz.snackbardemo.User ViewModel) {
+        // 这个方法有个坑，后面会说到
+        this.mViewModel = ViewModel;
+        synchronized(this) {
+            mDirtyFlags |= 0x1L;
+        }
+        notifyPropertyChanged(BR.viewModel);
+        super.requestRebind();
+    }
+```
+
+可以看到实际上主要是调用了一下 notifyPropertyChanged 方法。notifyPropertyChanged  内部就是做了一个回调监听的操作，和我们的观察者模式没有区别，但是这里比较搞笑的就是，此时监听是为 null 的，也就是说没有注册观察者。
+
+它在代码中表现的行为是这样的：我们创建一个对象A，将A通过 binding.setVariable 方法绑定到数据上，是可以正常显示出数据的，但是如果我们改变了对象A的某个属性，这个时候，属性的变化是无法反映到UI上的，我们还需要手动更新UI。
+
+那么当我们改变了对象A的某个属性时，怎么才能自动更新UI 呢？参考官方文档的一个方法是使用 @Bindable 注解，比如我们的对象长这样：
+
+> com.aprz.aboutme.MyName
+
+```kotlin
+data class MyName(var name: String) : BaseObservable() {
+
+    @get:Bindable
+    var nickname: String = "aprz"
+        set(value) {
+            field = value
+            notifyPropertyChanged(com.aprz.aboutme.BR.nickname)
+        }
+
+}
+```
+
+可以看到，每当 set 方法调用的时候，我们需要手机调用一下 notifyPropertyChanged 方法，这个时候，我们再看生成的文件，查看 `setViewModel` 方法：
+
+> com.aprz.databinding.ContentMainBindingImpl#setViewModel
+
+```java
+    public void setViewModel(@Nullable com.aprz.snackbardemo.User ViewModel) {
+        // hhh
+        updateRegistration(0, ViewModel);
+        this.mViewModel = ViewModel;
+        synchronized(this) {
+            mDirtyFlags |= 0x1L;
+        }
+        notifyPropertyChanged(BR.viewModel);
+        super.requestRebind();
+    }
+```
+
+可以看到，第一行多了一行代码：updateRegistration，应该可以猜到，这个方法里面**应该就是注册了观察者**。为了验证我们的想法，查看一下这个方法：
+
+> androidx.databinding.ViewDataBinding#updateRegistration(int, androidx.databinding.Observable)
+
+```java
+    protected boolean updateRegistration(int localFieldId, Observable observable) {
+        return updateRegistration(localFieldId, observable, CREATE_PROPERTY_LISTENER);
+    }
+```
+
+这里的调用链比较深，我们只关心重要的方法，最后发现调用到了如下方法
+
+> androidx.databinding.ViewDataBinding.WeakListener#setTarget
+
+```java
+        public void setTarget(T object) {
+            unregister();
+            mTarget = object;
+            if (mTarget != null) {
+                mObservable.addListener(mTarget);
+            }
+        }
+```
+
+这里的 mTarget 是上面的 viewModel 变量，mObservable 是一个叫做 WeakPropertyListener 的类，因为我们省略了中间的调用过程，所以会有点突兀，但是我们把它当作一个 WeakListener 的一个包装类就好了，它持有 WeakListener 的引用而已。
+
+再往下最终，会发现调用到了这里：
+
+> androidx.databinding.BaseObservable#addOnPropertyChangedCallback
+
+```java
+    @Override
+    public void addOnPropertyChangedCallback(@NonNull OnPropertyChangedCallback callback) {
+        synchronized (this) {
+            if (mCallbacks == null) {
+                mCallbacks = new PropertyChangeRegistry();
+            }
+        }
+        mCallbacks.add(callback);
+    }
+```
+
+这里就比较熟悉了吧，就是 notifyPropertyChanged 会触发监听回调，而这个监听就是在这里添加（注册）的。
+
+经过上面的一连串调用，viewModel，WeakPropertyListener ，WeakListener ，就建立这样的一个关系：
+
+![](F:\note-markdown\DataBinding原理分析\未命名表单 (1).png)
+
+
+
+因为 ViewModel 继承至 BaseObservable，所以它有一个成员变量：mCallbacks，而 **updateRegistration 方法主要是添加了一个观察者**。实际上DataBinding的自动更新UI原理还是观察者，但是它的高明之处是编译器自动生成逻辑代码。
+
+好的，说完了观察者的注册，还有一步需要完成，就是通知观察者数据发生了变化。应该还记得，我们的 ViewModel 里面，set 方法都调用了一个方法`notifyPropertyChanged`：
+
+```kotlin
+    @get:Bindable
+    var nickname: String = "aprz"
+        set(value) {
+            field = value
+            notifyPropertyChanged(com.aprz.aboutme.BR.nickname)
+        }
+```
+
+这个很显然就是通知观察者，我们的数据发生了变化，我们看看源码吧（其实不看都知道，最终触发了 mCallbacks 的回调）。同样的经过多层调用，到了下面的方法：
+
+> androidx.databinding.ViewDataBinding#handleFieldChange
+
+```java
+    private void handleFieldChange(int mLocalFieldId, Object object, int fieldId) {
+        if (mInLiveDataRegisterObserver) {
+            // We're in LiveData registration, which always results in a field change
+            // that we can ignore. The value will be read immediately after anyway, so
+            // there is no need to be dirty.
+            return;
+        }
+        boolean result = onFieldChange(mLocalFieldId, object, fieldId);
+        if (result) {
+            requestRebind();
+        }
+    }
+```
+
+主要是两个方法，先看第一个，看名字就应该是字段发生了变化的处理，该方法会调用到下面的方法：
+
+> com.aprz.aboutme.databinding.ActivityMainBindingImpl#onChangeMyName
+
+```java
+    private boolean onChangeViewModel(com.foxlee.testdatabinding.NewsViewModel ViewModel, int fieldId) {
+        switch (fieldId) {
+            case BR.name: {
+                synchronized(this) {
+                        mDirtyFlags |= 0x2L;
+                }
+                return true;
+            }
+            case BR.value1: {
+                synchronized(this) {
+                        mDirtyFlags |= 0x4L;
+                }
+                return true;
+            }
+            case BR._all: {
+                synchronized(this) {
+                        mDirtyFlags |= 0x1L;
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+```
+
+这里其实啥都没做，就只给 mDirtyFlags 设置了一个标记位，这里就很灵性了，它不是与我们通常的想法一样，给每个字段分别处理，而是只是设置一个标记。
+
+再看 requestRebind，从名字也可以看出来，应该是重新绑定，**因为 onChangeMyName 给字段发生了变化的位设置了标记，所以在这个方法里面，应该就是根据标志位来刷新UI了**，好，我们看看：
+
+> androidx.databinding.ViewDataBinding#requestRebind
+
+```java
+    protected void requestRebind() {
+        if (mContainingBinding != null) {
+            mContainingBinding.requestRebind();
+        } else {
+            ...
+            if (USE_CHOREOGRAPHER) {
+                mChoreographer.postFrameCallback(mFrameCallback);
+            } else {
+                mUIThreadHandler.post(mRebindRunnable);
+            }
+        }
+    }
+```
+
+如果对View的绘制源码有一点了解的，这里应该很好理解，这里就是刷新UI 了。然后继续往下追踪，它会调用到这个方法：
+
+> com.aprz.aboutme.databinding.ActivityMainBindingImpl#executeBindings
+
+```java
+        if ((dirtyFlags & 0xfL) != 0) {
+
+
+            if ((dirtyFlags & 0xbL) != 0) {
+
+                    if (viewModel != null) {
+                        // read viewModel.name
+                        viewModelName = viewModel.name;
+                    }
+            }
+            if ((dirtyFlags & 0xdL) != 0) {
+
+                    if (viewModel != null) {
+                        // read viewModel.value1
+                        viewModelValue1 = viewModel.value1;
+                    }
+            }
+        }
+        // batch finished
+        if ((dirtyFlags & 0xdL) != 0) {
+            // api target 1
+
+            com.foxlee.testdatabinding.NewsViewModel.onTestChange(this.mboundView3, viewModelValue1);
+            com.foxlee.testdatabinding.NewsViewModel.onTestChange(this.tvValue, viewModelValue1);
+        }
+        if ((dirtyFlags & 0xbL) != 0) {
+            // api target 1
+
+            com.foxlee.testdatabinding.NewsViewModel.onTestChange(this.tvName, viewModelName);
+        }
+```
+
+可以看到，这个方法里面就是根据 dirtyFlags 的标志位来更新UI的。这个标志位的算法需要说一下，我们拿 name 的更新举例子：
+
+在 `onChangeViewModel` 方法中，name字段更新的时候，给 mDirtyFlags 设置的标志位是 `mDirtyFlags |= 0x2L;`，而在 `executeBindings` 方法中，判断 name 字段的更新是使用的 `dirtyFlags & 0xbL` 来判断的，这是为啥呢？
+
+这里不去深入研究它的计算规则了，只是简单的说一下：
+
+0x1，0x2，0x4，0xb，0xd，0xf，他们转换成二进制是这样的：
+
+```shell
+0001	// 全部需要更新
+0010	// 字段1需要更新
+0100	// 字段2需要更新
+---------------------------------------------------
+1011	// 字段1需要更新，第2位必定为1，所以满足if条件
+1101	// 字段2需要更新，第3位必定为1，所以满足if条件
+```
+
+所以，dirtyFlags 的某一位代表着某个字段需要更新。这样自动刷新UI的逻辑也分析完了。
+
+还有一个问题，就是为啥，第一次会主动更新UI呢？？？
+
+其实就是 setViewModel 会将 mDirtyFlags 的 第一位设置为1，会导致所有的if条件都满足，就会更新所有UI。
 
